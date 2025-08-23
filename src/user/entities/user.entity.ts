@@ -1,4 +1,4 @@
-import { ConnectedPage } from 'src/facebook-connect/entities/connected-page.entity';
+import { ConnectedPage } from '../../facebook-connect/entities/connected-page.entity';
 import { RefreshToken } from '../../auth/entities/refresh-token.entity';
 import {
   Entity,

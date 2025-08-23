@@ -45,6 +45,7 @@ export class AuthService {
       const newUser = await userService.create({
         email: registerDto.email,
         passwordHash,
+        fullName: registerDto.fullName,
       });
 
       const { passwordHash: _, ...result } = newUser;
