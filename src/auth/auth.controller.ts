@@ -26,6 +26,14 @@ export class AuthController {
     return this.authService.register(registerDto);
   }
 
+  /**
+   * Log in a user and set refresh token in HTTP-only cookie.
+   * The access token is returned in the response body.
+   * @param req the request object containing user information
+   * @param response the response object to set cookies
+   * @returns Promise<{ accessToken: string }> the access token
+   * add refresh_token into cookies
+   */
   @UseGuards(LocalAuthGuard)
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -51,6 +59,14 @@ export class AuthController {
     return { accessToken: tokens.accessToken };
   }
 
+  /**
+   * Refresh access tokens using a valid refresh token.
+   *
+   * @param req the request object containing user information
+   * @param response the response object to set cookies
+   * @returns Promise<{ accessToken: string }> new access token
+   * add refresh_token into cookies
+   */
   @UseGuards(RefreshTokenGuard)
   @Get('refresh')
   @HttpCode(HttpStatus.OK)

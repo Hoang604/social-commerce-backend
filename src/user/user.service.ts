@@ -7,6 +7,15 @@ import { UpdateUserDto } from './dto/update-user-dto';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import * as bcrypt from 'bcrypt';
 
+interface SetRefreshTokenOptions {
+  refreshToken: string;
+  userId: string;
+  expiresAt: Date;
+  expiredRefreshToken?: string;
+  ipAddress?: string;
+  userAgent?: string;
+}
+
 @Injectable()
 export class UserService {
   constructor(
@@ -99,12 +108,6 @@ export class UserService {
     return this.userRepository.save(user);
   }
 
-  /**
-   * Deactivate a user by setting their status to INACTIVE.
-   *
-   * @param id the unique identifier of the user
-   * @returns Promise<User> the updated user entity with status set to INACTIVE
-   */
   async deactivate(id: string): Promise<User> {
     const user = await this.findOneById(id);
     user.status = UserStatus.INACTIVE;
@@ -112,25 +115,32 @@ export class UserService {
   }
 
   /**
-   * Set the current refresh token for a user (hashed).
-   *
-   * @param refreshToken the refresh token to hash and store
-   * @param userId the unique identifier of the user
-   * @param expiresAt when the refresh token expires
-   * @param ipAddress optional IP address where the token was issued
-   * @param userAgent optional user agent string
-   * @returns Promise<void> resolves when the update is complete
-   */
-  async setCurrentRefreshToken(
-    refreshToken: string,
-    userId: string,
-    expiresAt: Date,
-    expiredRefreshToken?: string,
-    ipAddress?: string,
-    userAgent?: string
-  ): Promise<void> {
+   * Set the current refresh token for a user.
+   * add new refresh token to the database and remove the old one if provided.
+  @param options - The options for setting the refresh token.
+  @param options.refreshToken - The refresh token to set.
+  @param options.userId - The unique identifier of the user.
+  @param options.expiresAt - The expiration date of the refresh token.
+  @param [options.expiredRefreshToken] - The previous refresh token to remove (optional).
+  @param [options.ipAddress] - The IP address of the user (optional).
+  @param [options.userAgent - The user agent of the user (optional).
+  @returns Promise<void> resolves when the refresh token is set
+  */
+  async setCurrentRefreshToken(options: SetRefreshTokenOptions): Promise<void> {
+    const {
+      refreshToken,
+      userId,
+      expiresAt,
+      expiredRefreshToken,
+      ipAddress,
+      userAgent,
+    } = options;
+
     return this.entityManager.transaction(async (entityManager) => {
       const hashedToken = await bcrypt.hash(refreshToken, 12);
+
+      let finalIpAddress = ipAddress;
+      let finalUserAgent = userAgent;
 
       const user = await this.userRepository.findOne({ where: { id: userId } });
 
@@ -138,12 +148,17 @@ export class UserService {
         throw new Error(`User with ID ${userId} not found`);
       }
 
-      // If an expired refresh token is provided, remove it
       if (expiredRefreshToken) {
-        await entityManager.delete(RefreshToken, {
-          userId,
-          hashedToken: expiredRefreshToken,
+        const oldToken = await entityManager.findOne(RefreshToken, {
+          where: { userId, hashedToken: expiredRefreshToken },
         });
+
+        if (oldToken) {
+          finalIpAddress = ipAddress || oldToken.ipAddress;
+          finalUserAgent = userAgent || oldToken.userAgent;
+
+          await entityManager.remove(oldToken);
+        }
       }
 
       // Create a new refresh token
@@ -151,8 +166,8 @@ export class UserService {
         hashedToken,
         userId,
         expiresAt,
-        ipAddress,
-        userAgent,
+        ipAddress: finalIpAddress,
+        userAgent: finalUserAgent,
       });
 
       await entityManager.save(newRefreshToken);

@@ -10,13 +10,18 @@ import { RegisterDto } from './dto/register.dto';
 import { User } from '../user/entities/user.entity';
 import { v4 as uuidv4 } from 'uuid';
 import { ConfigService } from '@nestjs/config';
+import { RefreshToken } from './entities/refresh-token.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    @InjectRepository(RefreshToken)
+    private readonly refreshTokenRepository: Repository<RefreshToken>
   ) {}
 
   async register(
@@ -48,6 +53,14 @@ export class AuthService {
     return null;
   }
 
+  /**
+   * Log in a user by generating access and refresh tokens.
+   * The refresh token is stored in the database and the access token is returned to the client.
+   * @param user the user entity
+   * @param ipAddress the IP address of the user (optional)
+   * @param userAgent the user agent string of the user's device (optional)
+   * @returns Promise<{ accessToken: string, refreshToken: string }> the generated tokens
+   */
   async login(user: User, ipAddress?: string, userAgent?: string) {
     const tokens = await this._generateTokens(user.id, user.email);
 
@@ -56,35 +69,45 @@ export class AuthService {
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     // Use UserService method to set refresh token
-    await this.userService.setCurrentRefreshToken(
-      tokens.refreshToken,
-      user.id,
+    await this.userService.setCurrentRefreshToken({
+      refreshToken: tokens.refreshToken,
+      userId: user.id,
       expiresAt,
       ipAddress,
-      userAgent
-    );
+      userAgent,
+    });
 
     await this.userService.updateLastLogin(user.id);
     return tokens;
   }
 
   async logout(userId: string, refreshToken?: string): Promise<boolean> {
-    // Use UserService method to verify and remove token
     if (refreshToken) {
       const isValidToken = await this.userService.verifyRefreshToken(
         refreshToken,
         userId
       );
       if (isValidToken) {
-        await this.userService.removeRefreshToken(userId);
+        await this.refreshTokenRepository.delete({
+          hashedToken: refreshToken,
+          userId,
+        });
       }
     } else {
       // If no refresh token provided, remove all refresh tokens for the user
-      await this.userService.removeRefreshToken(userId);
+      await this.refreshTokenRepository.delete({ userId });
     }
     return true;
   }
 
+  /**
+   * Refresh access tokens of user determined by userId, using a valid refresh token.\
+   * remove old refresh token and add a new one to the database.
+   *
+   * @param userId the unique identifier of the user
+   * @param refreshToken the refresh token to verify
+   * @returns Promise<{ accessToken: string, refreshToken: string }> new access and refresh tokens
+   */
   async refreshTokens(userId: string, refreshToken: string) {
     // Verify the refresh token using UserService
     const isValidToken = await this.userService.verifyRefreshToken(
@@ -104,11 +127,12 @@ export class AuthService {
     expiresAt.setDate(expiresAt.getDate() + 7);
 
     // Set the new refresh token (this will remove old ones and create a new one)
-    await this.userService.setCurrentRefreshToken(
-      tokens.refreshToken,
+    await this.userService.setCurrentRefreshToken({
+      refreshToken: tokens.refreshToken,
       userId,
-      expiresAt
-    );
+      expiresAt,
+      expiredRefreshToken: refreshToken,
+    });
 
     return tokens;
   }
