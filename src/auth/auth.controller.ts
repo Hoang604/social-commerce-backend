@@ -99,4 +99,16 @@ export class AuthController {
     response.clearCookie('refresh_token');
     return { message: 'Đăng xuất thành công.' };
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('logout-all')
+  @HttpCode(HttpStatus.OK)
+  async logoutAll(
+    @Request() req,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    await this.authService.logoutAll(req.user.id);
+    response.clearCookie('refresh_token');
+    return { message: 'Đã đăng xuất khỏi tất cả các thiết bị.' };
+  }
 }

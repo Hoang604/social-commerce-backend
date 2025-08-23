@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -13,6 +13,8 @@ import { UsageModule } from './usage/usage.module';
 import { RbacModule } from './rbac/rbac.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
+import { HttpModule } from '@nestjs/axios';
+import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 @Module({
   imports: [
@@ -34,6 +36,10 @@ import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
         synchronize: true,
       }),
     }),
+    HttpModule.register({
+      timeout: 5000,
+      maxRedirects: 5,
+    }),
     AuthModule,
     UserModule,
     FacebookConnectModule,
@@ -47,4 +53,8 @@ import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware).forRoutes('*');
+  }
+}

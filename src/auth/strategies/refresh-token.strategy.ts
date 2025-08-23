@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class RefreshTokenStrategy extends PassportStrategy(
   Strategy,
-  'jwt-refresh' // Đặt tên riêng cho strategy này
+  'jwt-refresh' // named this strategy as 'jwt-refresh'
 ) {
   constructor(configService: ConfigService) {
     const refreshSecret = configService.get<string>('JWT_REFRESH_SECRET');
@@ -18,10 +18,8 @@ export class RefreshTokenStrategy extends PassportStrategy(
     }
 
     super({
-      // Chỉ định cách lấy token
       jwtFromRequest: ExtractJwt.fromExtractors([
         (request: Request) => {
-          // Lấy token từ cookie có tên 'refresh_token'
           const data = request.cookies['refresh_token'];
           if (!data) {
             return null;
@@ -29,8 +27,9 @@ export class RefreshTokenStrategy extends PassportStrategy(
           return data;
         },
       ]),
-      secretOrKey: refreshSecret, // Sử dụng secret riêng cho refresh token
-      passReqToCallback: true, // Cho phép truyền request vào hàm validate
+      secretOrKey: refreshSecret,
+      // pass request obj to the validate method
+      passReqToCallback: true,
     });
   }
 

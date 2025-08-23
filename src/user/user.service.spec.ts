@@ -5,6 +5,7 @@ import { User } from './entities/user.entity';
 import { EntityManager, Repository } from 'typeorm';
 import { CreateUserDto } from './dto/create-user-dto';
 import { UpdateUserDto } from './dto/update-user-dto';
+import { RefreshToken } from '../auth/entities/refresh-token.entity';
 
 describe('UserService', () => {
   let service: UserService;
@@ -12,6 +13,7 @@ describe('UserService', () => {
   let entityManager: EntityManager;
 
   const USER_REPOSITORY_TOKEN = getRepositoryToken(User);
+  const REFRESH_TOKEN_REPOSITORY_TOKEN = getRepositoryToken(RefreshToken);
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -23,7 +25,16 @@ describe('UserService', () => {
             create: jest.fn(),
             save: jest.fn(),
             preload: jest.fn(),
+            findOne: jest.fn(),
+            update: jest.fn(),
           },
+        },
+        {
+            provide: REFRESH_TOKEN_REPOSITORY_TOKEN,
+            useValue: {
+                find: jest.fn(),
+                delete: jest.fn(),
+            }
         },
         {
           provide: EntityManager,
@@ -110,13 +121,14 @@ describe('UserService', () => {
 
       (entityManager.transaction as jest.Mock).mockImplementation(
         async (cb) => {
-          jest.spyOn(userRepository, 'preload').mockResolvedValue(undefined);
           const transactionalEntityManager = {
             save: jest.fn(),
           };
           return await cb(transactionalEntityManager);
         }
       );
+      
+      jest.spyOn(userRepository, 'preload').mockResolvedValue(undefined);
 
       await expect(
         service.updateProfile(userId, updateUserDto)

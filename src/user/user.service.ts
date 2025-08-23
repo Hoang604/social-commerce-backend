@@ -57,14 +57,10 @@ export class UserService {
    * Find a user by their email.
    *
    * @param email the email address of the user
-   * @returns Promise<User> the user entity if found, otherwise throws an error
+   * @returns Promise<User> the user entity if found, otherwise return null
    */
-  async findOneByEmail(email: string): Promise<User> {
-    const user = await this.userRepository.findOne({ where: { email } });
-    if (!user) {
-      throw new Error(`User with email ${email} not found`);
-    }
-    return user;
+  async findOneByEmail(email: string): Promise<User | null> {
+    return await this.userRepository.findOne({ where: { email } });
   }
 
   /**
@@ -148,6 +144,14 @@ export class UserService {
         throw new Error(`User with ID ${userId} not found`);
       }
 
+      if (finalIpAddress && finalUserAgent) {
+        await entityManager.delete(RefreshToken, {
+          userId,
+          ipAddress: finalIpAddress,
+          userAgent: finalUserAgent,
+        });
+      }
+
       if (expiredRefreshToken) {
         const oldToken = await entityManager.findOne(RefreshToken, {
           where: { userId, hashedToken: expiredRefreshToken },
@@ -180,9 +184,15 @@ export class UserService {
    * @param userId the unique identifier of the user
    * @returns Promise<void> resolves when the update is complete
    */
-  async removeRefreshToken(userId: string): Promise<void> {
+  async removeAllRefreshTokensForUser(userId: string): Promise<void> {
     this.entityManager.transaction(async (entityManager) => {
       await entityManager.delete(RefreshToken, { userId });
+    });
+  }
+
+  async invalidateAllTokens(userId: string): Promise<void> {
+    this.entityManager.transaction(async (entityManager) => {
+      await entityManager.update(User, userId, { tokensValidFrom: new Date() });
     });
   }
 
