@@ -14,16 +14,15 @@ import {
   HttpStatus,
   Body,
   Logger,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { FacebookConnectService } from './facebook-connect.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { Request, Response } from 'express';
 import { FacebookCallbackDto } from './dto/facebook-callback.dto';
 import { AuthUrlDto } from './dto/auth-url.dto';
-import { CreateConnectedPageDto } from './dto/create-connected-page.dto';
 import { ConnectedPage } from './entities/connected-page.entity';
 import { PendingPagesDto } from './dto/pending-pages.dto';
+import { ConnectPagesDto } from './dto/connect-pages.dto';
 
 // Định nghĩa một interface cho Request đã được xác thực
 interface AuthenticatedRequest extends Request {
@@ -75,22 +74,30 @@ export class FacebookConnectController {
   }
 
   @Post('connected-pages')
-  @HttpCode(HttpStatus.CREATED)
-  async connectPage(
+  async connectPages(
     @Req() req: AuthenticatedRequest,
-    @Body(new ValidationPipe()) createDto: CreateConnectedPageDto
-  ): Promise<Omit<ConnectedPage, 'encryptedPageAccessToken'>> {
+    @Res({ passthrough: true }) res: Response,
+    @Body(new ValidationPipe()) connectDto: ConnectPagesDto
+  ) {
     const userId = req.user.id;
-    this.logger.log(
-      `User ${userId} connecting page ${createDto.facebookPageId}`
-    );
-    const connectedPage = await this.facebookConnectService.saveConnectedPage(
+    this.logger.log(`User ${userId} attempting to connect multiple pages.`);
+
+    const result = await this.facebookConnectService.connectPages(
       userId,
-      createDto
+      connectDto
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { encryptedPageAccessToken, ...result } = connectedPage;
+    if (result.failed.length > 0 && result.succeeded.length === 0) {
+      // If all failed, it's a Bad Request on the client's part
+      res.status(HttpStatus.BAD_REQUEST);
+    } else if (result.failed.length > 0) {
+      // If some succeeded and some failed
+      res.status(HttpStatus.MULTI_STATUS);
+    } else {
+      // If all succeeded
+      res.status(HttpStatus.CREATED);
+    }
+
     return result;
   }
 

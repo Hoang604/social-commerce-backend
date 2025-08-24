@@ -9,14 +9,14 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository, EntityManager } from 'typeorm';
 import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
 import { ConnectedPage } from './entities/connected-page.entity';
 import { EncryptionService } from '../common/services/encryption.service';
-import { CreateConnectedPageDto } from './dto/create-connected-page.dto';
 import { AxiosError } from 'axios';
 import { PendingPagesDto } from './dto/pending-pages.dto';
+import { ConnectPagesDto } from './dto/connect-pages.dto';
 
 interface FacebookPage {
   id: string;
@@ -31,6 +31,12 @@ interface PendingConnection {
   userAccessToken: string;
   pages: FacebookPage[];
   expires: number;
+}
+
+// Định nghĩa cấu trúc cho kết quả trả về của service
+export interface ConnectPagesResult {
+  succeeded: Partial<ConnectedPage>[];
+  failed: { facebookPageId: string; pageName: string; error: string }[];
 }
 
 @Injectable()
@@ -50,7 +56,8 @@ export class FacebookConnectService {
     private readonly httpService: HttpService,
     private readonly encryptionService: EncryptionService,
     @InjectRepository(ConnectedPage)
-    private readonly pageRepository: Repository<ConnectedPage>
+    private readonly pageRepository: Repository<ConnectedPage>,
+    private readonly entityManager: EntityManager // Inject EntityManager
   ) {
     this.apiVersion = this.configService.get<string>(
       'FACEBOOK_API_VERSION',
@@ -104,7 +111,6 @@ export class FacebookConnectService {
       const userAccessToken = await this.exchangeCodeForUserAccessToken(code);
       const pages = await this.getUserPages(userAccessToken);
 
-      // Lưu trữ an toàn token và danh sách trang ở phía server
       this.pendingConnections.set(userId, {
         userAccessToken,
         pages,
@@ -126,12 +132,10 @@ export class FacebookConnectService {
     return { pages: pending.pages };
   }
 
-  async saveConnectedPage(
+  async connectPages(
     userId: string,
-    dto: CreateConnectedPageDto
-  ): Promise<ConnectedPage> {
-    const { facebookPageId, pageName } = dto;
-
+    dto: ConnectPagesDto
+  ): Promise<ConnectPagesResult> {
     const pending = this.pendingConnections.get(userId);
     if (!pending || pending.expires < Date.now()) {
       this.pendingConnections.delete(userId);
@@ -139,51 +143,91 @@ export class FacebookConnectService {
         'Connection process has expired. Please start over.'
       );
     }
-
     const { userAccessToken } = pending;
-    this.pendingConnections.delete(userId); // Xóa cache sau khi sử dụng
 
-    const existingPage = await this.pageRepository.findOne({
-      where: { facebookPageId },
+    const succeeded: Partial<ConnectedPage>[] = [];
+    const failed: {
+      facebookPageId: string;
+      pageName: string;
+      error: string;
+    }[] = [];
+    const pagesToConnect = dto.pages;
+    const pageIds = pagesToConnect.map((p) => p.facebookPageId);
+
+    // Kiểm tra tất cả các trang đã được kết nối bởi người dùng khác hay chưa
+    const existingPages = await this.pageRepository.find({
+      where: { facebookPageId: In(pageIds) },
     });
-    if (existingPage) {
-      throw new BadRequestException(
-        `Page ${pageName} is already connected by another user.`
+
+    for (const page of pagesToConnect) {
+      const existing = existingPages.find(
+        (p) => p.facebookPageId === page.facebookPageId
       );
+      if (existing) {
+        failed.push({
+          ...page,
+          error: 'This page is already connected to another account.',
+        });
+      }
     }
 
-    try {
-      const pageAccessToken = await this.getLongLivedPageAccessToken(
-        userAccessToken,
-        facebookPageId
-      );
-      const encryptedPageAccessToken =
-        this.encryptionService.encrypt(pageAccessToken);
-
-      const newConnectedPage = this.pageRepository.create({
-        userId,
-        facebookPageId,
-        pageName,
-        encryptedPageAccessToken,
-      });
-
-      const savedPage = await this.pageRepository.save(newConnectedPage);
-
-      await this.subscribePageToWebhooks(facebookPageId, pageAccessToken);
-      return savedPage;
-    } catch (error) {
-      this.handleFacebookError(
-        error,
-        `Failed to save and subscribe page ${facebookPageId}`
-      );
+    // Nếu có lỗi, trả về ngay lập tức, không thực hiện giao dịch
+    if (failed.length > 0) {
+      // Xóa cache vì phiên kết nối đã được sử dụng một phần
+      this.pendingConnections.delete(userId);
+      return { succeeded, failed };
     }
+
+    // Bắt đầu giao dịch CSDL
+    await this.entityManager.transaction(async (transactionManager) => {
+      for (const page of pagesToConnect) {
+        try {
+          const pageAccessToken = await this.getLongLivedPageAccessToken(
+            userAccessToken,
+            page.facebookPageId
+          );
+          const encryptedPageAccessToken =
+            this.encryptionService.encrypt(pageAccessToken);
+
+          const newConnectedPage = transactionManager.create(ConnectedPage, {
+            userId,
+            facebookPageId: page.facebookPageId,
+            pageName: page.pageName,
+            encryptedPageAccessToken,
+          });
+
+          const savedPage = await transactionManager.save(newConnectedPage);
+          await this.subscribePageToWebhooks(
+            page.facebookPageId,
+            pageAccessToken
+          );
+
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { encryptedPageAccessToken: _, ...result } = savedPage;
+          succeeded.push(result);
+        } catch (error) {
+          // Nếu có bất kỳ lỗi nào, ném ra để rollback toàn bộ giao dịch
+          this.logger.error(
+            `Failed to connect page ${page.facebookPageId} for user ${userId}. Rolling back transaction.`,
+            error.stack
+          );
+          throw new InternalServerErrorException(
+            `Failed to connect page ${page.pageName}.`
+          );
+        }
+      }
+    });
+
+    // Nếu giao dịch thành công (không có lỗi nào được ném ra), xóa cache
+    this.pendingConnections.delete(userId);
+
+    return { succeeded, failed };
   }
 
   getFrontendSelectPageUrl(): string {
     return this.frontendSelectPageUrl;
   }
 
-  // ... các phương thức private và list/disconnect giữ nguyên ...
   async listConnectedPages(userId: string): Promise<ConnectedPage[]> {
     const pages = await this.pageRepository.find({
       where: { userId },

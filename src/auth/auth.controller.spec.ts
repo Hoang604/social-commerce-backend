@@ -20,6 +20,7 @@ describe('AuthController', () => {
             login: jest.fn(),
             refreshTokens: jest.fn(),
             logout: jest.fn(),
+            logoutAll: jest.fn(),
           },
         },
       ],
@@ -174,6 +175,29 @@ describe('AuthController', () => {
       expect(authService.logout).not.toHaveBeenCalled();
       expect(res.clearCookie).toHaveBeenCalledWith('refresh_token');
       expect(result).toEqual({ message: 'Đăng xuất thành công.' });
+    });
+  });
+
+  describe('logoutAll', () => {
+    it('should call authService.logoutAll and clear the refresh_token cookie', async () => {
+      const req = {
+        user: {
+          id: 'test-id',
+        },
+      };
+      const res = {
+        clearCookie: jest.fn(),
+      } as unknown as Response;
+
+      (authService.logoutAll as jest.Mock).mockResolvedValue(true);
+
+      const result = await controller.logoutAll(req, res);
+
+      expect(authService.logoutAll).toHaveBeenCalledWith('test-id');
+      expect(res.clearCookie).toHaveBeenCalledWith('refresh_token');
+      expect(result).toEqual({
+        message: 'Đã đăng xuất khỏi tất cả các thiết bị.',
+      });
     });
   });
 });
