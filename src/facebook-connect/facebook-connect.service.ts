@@ -13,7 +13,6 @@ import * as crypto from 'crypto';
 import { ConnectedPage } from './entities/connected-page.entity';
 import { EncryptionService } from '../common/services/encryption.service';
 
-// Interface để định nghĩa cấu trúc dữ liệu trả về từ Facebook API
 interface FacebookPage {
   id: string;
   name: string;
@@ -23,8 +22,9 @@ interface FacebookPage {
 @Injectable()
 export class FacebookConnectService {
   private readonly logger = new Logger(FacebookConnectService.name);
-  // Sử dụng Map để lưu trữ state tạm thời, trong production nên dùng Redis
   private stateStore = new Map<string, { userId: string; expires: number }>();
+
+  private readonly apiVersion: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -32,16 +32,13 @@ export class FacebookConnectService {
     private readonly encryptionService: EncryptionService,
     @InjectRepository(ConnectedPage)
     private readonly connectedPageRepository: Repository<ConnectedPage>
-  ) {}
+  ) {
+    this.apiVersion =
+      this.configService.get<string>('FACEBOOK_API_VERSION') || 'v18.0';
+  }
 
-  /**
-   * Khởi tạo luồng kết nối OAuth2
-   * @param userId - ID của người dùng đang thực hiện kết nối
-   * @returns URL ủy quyền của Facebook
-   */
   initiateConnection(userId: string): string {
     const state = crypto.randomBytes(16).toString('hex');
-    // Lưu state và userId, đặt thời gian hết hạn là 10 phút
     this.stateStore.set(state, {
       userId,
       expires: Date.now() + 10 * 60 * 1000,
@@ -51,17 +48,13 @@ export class FacebookConnectService {
     const callbackUrl = this.configService.get('FACEBOOK_CALLBACK_URL');
     const scope = 'pages_show_list,pages_messaging,pages_read_engagement';
 
-    const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${appId}&redirect_uri=${callbackUrl}&state=${state}&scope=${scope}`;
+    const authUrl = `https://www.facebook.com/${this.apiVersion}/dialog/oauth?client_id=${appId}&redirect_uri=${callbackUrl}&state=${state}&scope=${scope}`;
 
     return authUrl;
   }
 
-  /**
-   * Xử lý callback từ Facebook sau khi người dùng ủy quyền
-   * @param code - Mã ủy quyền từ Facebook
-   * @param state - Giá trị state để chống tấn công CSRF
-   */
   async handleCallback(code: string, state: string): Promise<void> {
+    // ... (logic không thay đổi)
     const storedState = this.stateStore.get(state);
 
     if (!storedState || storedState.expires < Date.now()) {
@@ -72,7 +65,7 @@ export class FacebookConnectService {
     }
 
     const { userId } = storedState;
-    this.stateStore.delete(state); // Xóa state sau khi đã sử dụng
+    this.stateStore.delete(state);
 
     try {
       const userAccessToken = await this.exchangeCodeForUserAccessToken(code);
@@ -99,7 +92,8 @@ export class FacebookConnectService {
   }
 
   private async exchangeCodeForUserAccessToken(code: string): Promise<string> {
-    const url = 'https://graph.facebook.com/v18.0/oauth/access_token';
+    // --- THAY ĐỔI 4: Sử dụng biến apiVersion trong URL ---
+    const url = `https://graph.facebook.com/${this.apiVersion}/oauth/access_token`;
     const params = {
       client_id: this.configService.get('FACEBOOK_APP_ID'),
       client_secret: this.configService.get('FACEBOOK_APP_SECRET'),
@@ -116,10 +110,9 @@ export class FacebookConnectService {
   private async getLongLivedUserAccessToken(
     shortLivedToken: string
   ): Promise<string> {
-    // Trong thực tế, bạn nên lấy token dài hạn, nhưng để đơn giản cho MVP, chúng ta có thể bỏ qua bước này
-    // Tuy nhiên, đây là cách thực hiện:
+    // --- THAY ĐỔI 5 (khuyến nghị): Sử dụng biến apiVersion trong URL ---
     /*
-    const url = 'https://graph.facebook.com/v18.0/oauth/access_token';
+    const url = `https://graph.facebook.com/${this.apiVersion}/oauth/access_token`;
     const params = {
       grant_type: 'fb_exchange_token',
       client_id: this.configService.get('FACEBOOK_APP_ID'),
@@ -129,11 +122,12 @@ export class FacebookConnectService {
     const response = await firstValueFrom(this.httpService.get(url, { params }));
     return response.data.access_token;
     */
-    return shortLivedToken; // For simplicity in MVP
+    return shortLivedToken;
   }
 
   private async getUserPages(userAccessToken: string): Promise<FacebookPage[]> {
-    const url = `https://graph.facebook.com/me/accounts`;
+    // --- THAY ĐỔI 6 (khuyến nghị): Sử dụng biến apiVersion trong URL ---
+    const url = `https://graph.facebook.com/${this.apiVersion}/me/accounts`;
     const params = {
       access_token: userAccessToken,
       fields: 'id,name,access_token',

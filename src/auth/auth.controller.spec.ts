@@ -38,10 +38,12 @@ describe('AuthController', () => {
       const registerDto: RegisterDto = {
         email: 'test@example.com',
         password: 'password',
+        fullName: 'Test User',
       };
       const user = new User();
       user.id = 'test-id';
       user.email = 'test@example.com';
+      user.fullName = 'Test User';
 
       (authService.register as jest.Mock).mockResolvedValue(user);
 
