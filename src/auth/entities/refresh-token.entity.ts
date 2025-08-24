@@ -22,10 +22,10 @@ export class RefreshToken {
   @ManyToOne(() => User, (user) => user.hashedRefreshTokens, {
     onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: 'user_id' })
   user: User;
 
-  @Column()
+  @Column({ type: 'uuid' })
   userId: string;
 
   @CreateDateColumn({ type: 'timestamptz' })

@@ -31,6 +31,29 @@
 $ npm install
 ```
 
+## Database Migrations
+
+This project uses TypeORM migrations to manage database schema changes. The `synchronize` option is disabled.
+
+### How to use
+
+1.  **Generate a new migration:** After making changes to your entities, generate a new migration file.
+
+    ```bash
+    npm run migration:generate src/database/migrations/YourMigrationName
+    ```
+
+2.  **Run migrations:** To apply pending migrations to the database.
+
+    ```bash
+    npm run migration:run
+    ```
+
+3.  **Revert a migration:** To undo the last applied migration.
+    ```bash
+    npm run migration:revert
+    ```
+
 ## Compile and run the project
 
 ```bash

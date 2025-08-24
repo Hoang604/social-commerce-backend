@@ -15,6 +15,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { HttpModule } from '@nestjs/axios';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { RawBodyMiddleware } from './common/middleware/raw-body.middleware';
+import { FacebookApiModule } from './facebook-api/facebook-api.module';
 
 @Module({
   imports: [
@@ -22,6 +25,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    EventEmitterModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
@@ -49,12 +53,14 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
     BillingModule,
     UsageModule,
     RbacModule,
+    FacebookApiModule,
   ],
   controllers: [AppController],
   providers: [AppService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
+    consumer.apply(RawBodyMiddleware).forRoutes('*');
     consumer.apply(LoggerMiddleware).forRoutes('*');
   }
 }

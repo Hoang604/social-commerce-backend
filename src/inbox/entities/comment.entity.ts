@@ -1,0 +1,64 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
+import { ConnectedPage } from '../../facebook-connect/entities/connected-page.entity';
+
+@Entity('comments')
+export class Comment {
+  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
+  id: number;
+
+  @Index()
+  @Column({ type: 'uuid' })
+  connectedPageId: string;
+
+  @ManyToOne(() => ConnectedPage, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'connected_page_id' })
+  connectedPage: ConnectedPage;
+
+  @Index()
+  @Column({ type: 'bigint', nullable: true })
+  parentCommentId: number;
+
+  @ManyToOne(() => Comment, (comment) => comment.replies, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
+  @JoinColumn({ name: 'parent_comment_id' })
+  parentComment: Comment;
+
+  @OneToMany(() => Comment, (comment) => comment.parentComment)
+  replies: Comment[];
+
+  @Column({ unique: true })
+  facebookCommentId: string;
+
+  @Index()
+  @Column()
+  facebookPostId: string;
+
+  @Column({ type: 'text', nullable: true })
+  content: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  attachments: any;
+
+  @Column()
+  senderId: string;
+
+  @Column()
+  fromCustomer: boolean;
+
+  @Column({ type: 'timestamptz' })
+  createdAtFacebook: Date;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  createdAt: Date;
+}

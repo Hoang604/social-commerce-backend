@@ -3,6 +3,8 @@ import {
   ForbiddenException,
   InternalServerErrorException,
   Logger,
+  NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
@@ -12,29 +14,57 @@ import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
 import { ConnectedPage } from './entities/connected-page.entity';
 import { EncryptionService } from '../common/services/encryption.service';
+import { CreateConnectedPageDto } from './dto/create-connected-page.dto';
+import { AxiosError } from 'axios';
+import { PendingPagesDto } from './dto/pending-pages.dto';
 
 interface FacebookPage {
   id: string;
   name: string;
+}
+
+interface FacebookPageWithToken extends FacebookPage {
   access_token: string;
+}
+
+interface PendingConnection {
+  userAccessToken: string;
+  pages: FacebookPage[];
+  expires: number;
 }
 
 @Injectable()
 export class FacebookConnectService {
   private readonly logger = new Logger(FacebookConnectService.name);
   private stateStore = new Map<string, { userId: string; expires: number }>();
+  private pendingConnections = new Map<string, PendingConnection>();
 
   private readonly apiVersion: string;
+  private readonly appId: string;
+  private readonly appSecret: string;
+  private readonly callbackUrl: string;
+  private readonly frontendSelectPageUrl: string;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
     private readonly encryptionService: EncryptionService,
     @InjectRepository(ConnectedPage)
-    private readonly connectedPageRepository: Repository<ConnectedPage>
+    private readonly pageRepository: Repository<ConnectedPage>
   ) {
-    this.apiVersion =
-      this.configService.get<string>('FACEBOOK_API_VERSION') || 'v18.0';
+    this.apiVersion = this.configService.get<string>(
+      'FACEBOOK_API_VERSION',
+      'v19.0'
+    );
+    this.appId = this.configService.get<string>('FACEBOOK_APP_ID') || '';
+    this.appSecret =
+      this.configService.get<string>('FACEBOOK_APP_SECRET') || '';
+    this.callbackUrl =
+      this.configService.get<string>('FACEBOOK_CALLBACK_URL') || '';
+    this.frontendSelectPageUrl = this.configService.get<string>(
+      'FRONTEND_SELECT_PAGE_URL',
+      'http://localhost:3001/settings/connections/select-page'
+    );
   }
 
   initiateConnection(userId: string): string {
@@ -44,105 +74,220 @@ export class FacebookConnectService {
       expires: Date.now() + 10 * 60 * 1000,
     });
 
-    const appId = this.configService.get('FACEBOOK_APP_ID');
-    const callbackUrl = this.configService.get('FACEBOOK_CALLBACK_URL');
-    const scope = 'pages_show_list,pages_messaging,pages_read_engagement';
+    const scope =
+      'pages_show_list,pages_messaging,pages_read_engagement,pages_manage_metadata';
+    const authUrl = `https://www.facebook.com/${this.apiVersion}/dialog/oauth?client_id=${this.appId}&redirect_uri=${this.callbackUrl}&state=${state}&scope=${scope}&response_type=code`;
 
-    const authUrl = `https://www.facebook.com/${this.apiVersion}/dialog/oauth?client_id=${appId}&redirect_uri=${callbackUrl}&state=${state}&scope=${scope}`;
-
+    this.logger.log(`Generated auth URL for user ${userId}`);
     return authUrl;
   }
 
-  async handleCallback(code: string, state: string): Promise<void> {
-    // ... (logic không thay đổi)
+  async handleCallback(
+    userId: string,
+    code: string,
+    state: string
+  ): Promise<void> {
     const storedState = this.stateStore.get(state);
-
-    if (!storedState || storedState.expires < Date.now()) {
+    if (
+      !storedState ||
+      storedState.userId !== userId ||
+      storedState.expires < Date.now()
+    ) {
       this.stateStore.delete(state);
       throw new ForbiddenException(
-        'Invalid or expired state. CSRF attack detected.'
+        'Invalid or expired state parameter. Possible CSRF attack.'
       );
     }
-
-    const { userId } = storedState;
     this.stateStore.delete(state);
 
     try {
       const userAccessToken = await this.exchangeCodeForUserAccessToken(code);
-      const longLivedUserToken =
-        await this.getLongLivedUserAccessToken(userAccessToken);
-      const pages = await this.getUserPages(longLivedUserToken);
+      const pages = await this.getUserPages(userAccessToken);
 
-      for (const page of pages) {
-        await this.connectedPageRepository.save({
-          userId,
-          facebookPageId: page.id,
-          pageName: page.name,
-          encryptedPageAccessToken: this.encryptionService.encrypt(
-            page.access_token
-          ),
-        });
-      }
+      // Lưu trữ an toàn token và danh sách trang ở phía server
+      this.pendingConnections.set(userId, {
+        userAccessToken,
+        pages,
+        expires: Date.now() + 5 * 60 * 1000, // 5 phút để hoàn tất
+      });
     } catch (error) {
-      this.logger.error('Failed to handle Facebook callback', error.stack);
-      throw new InternalServerErrorException(
-        'Failed to connect with Facebook.'
+      this.handleFacebookError(error, 'Failed to handle Facebook callback');
+    }
+  }
+
+  getPendingPages(userId: string): PendingPagesDto {
+    const pending = this.pendingConnections.get(userId);
+    if (!pending || pending.expires < Date.now()) {
+      this.pendingConnections.delete(userId);
+      throw new NotFoundException(
+        'No pending connection found or connection has expired.'
+      );
+    }
+    return { pages: pending.pages };
+  }
+
+  async saveConnectedPage(
+    userId: string,
+    dto: CreateConnectedPageDto
+  ): Promise<ConnectedPage> {
+    const { facebookPageId, pageName } = dto;
+
+    const pending = this.pendingConnections.get(userId);
+    if (!pending || pending.expires < Date.now()) {
+      this.pendingConnections.delete(userId);
+      throw new BadRequestException(
+        'Connection process has expired. Please start over.'
+      );
+    }
+
+    const { userAccessToken } = pending;
+    this.pendingConnections.delete(userId); // Xóa cache sau khi sử dụng
+
+    const existingPage = await this.pageRepository.findOne({
+      where: { facebookPageId },
+    });
+    if (existingPage) {
+      throw new BadRequestException(
+        `Page ${pageName} is already connected by another user.`
+      );
+    }
+
+    try {
+      const pageAccessToken = await this.getLongLivedPageAccessToken(
+        userAccessToken,
+        facebookPageId
+      );
+      const encryptedPageAccessToken =
+        this.encryptionService.encrypt(pageAccessToken);
+
+      const newConnectedPage = this.pageRepository.create({
+        userId,
+        facebookPageId,
+        pageName,
+        encryptedPageAccessToken,
+      });
+
+      const savedPage = await this.pageRepository.save(newConnectedPage);
+
+      await this.subscribePageToWebhooks(facebookPageId, pageAccessToken);
+      return savedPage;
+    } catch (error) {
+      this.handleFacebookError(
+        error,
+        `Failed to save and subscribe page ${facebookPageId}`
       );
     }
   }
 
+  getFrontendSelectPageUrl(): string {
+    return this.frontendSelectPageUrl;
+  }
+
+  // ... các phương thức private và list/disconnect giữ nguyên ...
+  async listConnectedPages(userId: string): Promise<ConnectedPage[]> {
+    const pages = await this.pageRepository.find({
+      where: { userId },
+      select: ['id', 'facebookPageId', 'pageName', 'createdAt', 'updatedAt'],
+    });
+    return pages;
+  }
+
+  async disconnectPage(userId: string, id: string): Promise<void> {
+    const page = await this.pageRepository.findOne({ where: { id, userId } });
+    if (!page) {
+      throw new NotFoundException(
+        `Connected page with ID ${id} not found for this user.`
+      );
+    }
+
+    try {
+      const pageAccessToken = this.encryptionService.decrypt(
+        page.encryptedPageAccessToken
+      );
+      await this.unsubscribePageFromWebhooks(
+        page.facebookPageId,
+        pageAccessToken
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not unsubscribe webhooks for page ${page.facebookPageId}, but proceeding with deletion. Error: ${error.message}`
+      );
+    }
+
+    await this.pageRepository.delete({ id, userId });
+  }
+
   private async exchangeCodeForUserAccessToken(code: string): Promise<string> {
-    // --- THAY ĐỔI 4: Sử dụng biến apiVersion trong URL ---
     const url = `https://graph.facebook.com/${this.apiVersion}/oauth/access_token`;
     const params = {
-      client_id: this.configService.get('FACEBOOK_APP_ID'),
-      client_secret: this.configService.get('FACEBOOK_APP_SECRET'),
-      redirect_uri: this.configService.get('FACEBOOK_CALLBACK_URL'),
+      client_id: this.appId,
+      client_secret: this.appSecret,
+      redirect_uri: this.callbackUrl,
       code,
     };
-
     const response = await firstValueFrom(
       this.httpService.get(url, { params })
     );
     return response.data.access_token;
   }
 
-  private async getLongLivedUserAccessToken(
-    shortLivedToken: string
-  ): Promise<string> {
-    // --- THAY ĐỔI 5 (khuyến nghị): Sử dụng biến apiVersion trong URL ---
-    /*
-    const url = `https://graph.facebook.com/${this.apiVersion}/oauth/access_token`;
-    const params = {
-      grant_type: 'fb_exchange_token',
-      client_id: this.configService.get('FACEBOOK_APP_ID'),
-      client_secret: this.configService.get('FACEBOOK_APP_SECRET'),
-      fb_exchange_token: shortLivedToken,
-    };
-    const response = await firstValueFrom(this.httpService.get(url, { params }));
-    return response.data.access_token;
-    */
-    return shortLivedToken;
-  }
-
   private async getUserPages(userAccessToken: string): Promise<FacebookPage[]> {
-    // --- THAY ĐỔI 6 (khuyến nghị): Sử dụng biến apiVersion trong URL ---
     const url = `https://graph.facebook.com/${this.apiVersion}/me/accounts`;
-    const params = {
-      access_token: userAccessToken,
-      fields: 'id,name,access_token',
-    };
+    const params = { access_token: userAccessToken, fields: 'id,name' };
     const response = await firstValueFrom(
       this.httpService.get(url, { params })
     );
     return response.data.data;
   }
 
-  async listConnectedPages(userId: string): Promise<ConnectedPage[]> {
-    return this.connectedPageRepository.find({ where: { userId } });
+  private async getLongLivedPageAccessToken(
+    userAccessToken: string,
+    pageId: string
+  ): Promise<string> {
+    const url = `https://graph.facebook.com/${this.apiVersion}/${pageId}`;
+    const params = { access_token: userAccessToken, fields: 'access_token' };
+    const response = await firstValueFrom(
+      this.httpService.get<FacebookPageWithToken>(url, { params })
+    );
+    return response.data.access_token;
   }
 
-  async disconnectPage(userId: string, pageId: string): Promise<void> {
-    await this.connectedPageRepository.delete({ id: pageId, userId });
+  private async subscribePageToWebhooks(
+    pageId: string,
+    pageAccessToken: string
+  ): Promise<void> {
+    const url = `https://graph.facebook.com/${this.apiVersion}/${pageId}/subscribed_apps`;
+    const params = {
+      subscribed_fields: 'messages,feed',
+      access_token: pageAccessToken,
+    };
+    await firstValueFrom(this.httpService.post(url, null, { params }));
+    this.logger.log(`Successfully subscribed page ${pageId} to webhooks.`);
+  }
+
+  private async unsubscribePageFromWebhooks(
+    pageId: string,
+    pageAccessToken: string
+  ): Promise<void> {
+    const url = `https://graph.facebook.com/${this.apiVersion}/${pageId}/subscribed_apps`;
+    const params = { access_token: pageAccessToken };
+    await firstValueFrom(this.httpService.delete(url, { params }));
+    this.logger.log(`Successfully unsubscribed page ${pageId} from webhooks.`);
+  }
+
+  private handleFacebookError(error: any, context: string): never {
+    if (error instanceof AxiosError && error.response) {
+      const fbError = error.response.data?.error;
+      this.logger.error(
+        `${context}: [${fbError?.type}] ${fbError?.message}`,
+        error.stack
+      );
+      throw new InternalServerErrorException(
+        fbError?.message ||
+          'An error occurred while communicating with Facebook.'
+      );
+    }
+    this.logger.error(`${context}: ${error.message}`, error.stack);
+    throw new InternalServerErrorException('An internal error occurred.');
   }
 }
