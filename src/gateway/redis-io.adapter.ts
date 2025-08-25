@@ -23,7 +23,6 @@ export class RedisIoAdapter extends IoAdapter {
     });
     const subClient = pubClient.duplicate();
 
-    // Logic này là chính xác cho redis@4.x
     await Promise.all([pubClient.connect(), subClient.connect()]);
 
     this.adapterConstructor = createAdapter(pubClient, subClient);

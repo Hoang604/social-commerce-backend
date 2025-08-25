@@ -40,18 +40,18 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "cookie-parser": "^1.4.7",
-    "otplib": "^12.0.1",
     "passport": "^0.7.0",
-    "passport-facebook": "^3.0.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",
     "pg": "^8.16.3",
-    "qrcode": "^1.5.3",
     "redis": "^4.7.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "typeorm-naming-strategies": "^4.1.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "otplib": "^12.0.1",
+    "passport-facebook": "^3.0.0",
+    "qrcode": "^1.5.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -81,7 +81,9 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "@types/passport-facebook": "^3.0.3",
+    "@types/qrcode": "^1.5.5"
   },
   "jest": {
     "moduleFileExtensions": [

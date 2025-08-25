@@ -25,14 +25,14 @@ export class Comment {
 
   @Index()
   @Column({ type: 'bigint', nullable: true })
-  parentCommentId: number;
+  parentCommentId: number | null;
 
   @ManyToOne(() => Comment, (comment) => comment.replies, {
     onDelete: 'SET NULL',
     nullable: true,
   })
   @JoinColumn({ name: 'parent_comment_id' })
-  parentComment: Comment;
+  parentComment: Comment | null;
 
   @OneToMany(() => Comment, (comment) => comment.parentComment)
   replies: Comment[];
@@ -45,10 +45,10 @@ export class Comment {
   facebookPostId: string;
 
   @Column({ type: 'text', nullable: true })
-  content: string;
+  content: string | null;
 
   @Column({ type: 'jsonb', nullable: true })
-  attachments: any;
+  attachments: any | null;
 
   @Column()
   senderId: string;
