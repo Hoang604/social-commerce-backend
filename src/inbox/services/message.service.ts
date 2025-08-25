@@ -6,6 +6,7 @@ import { FacebookApiService } from '../../facebook-api/facebook-api.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Conversation } from '../entities/conversation.entity';
 import { EncryptionService } from '../../common/services/encryption.service';
+import { ListMessagesDto } from '../dto/list-messages.dto';
 
 interface CreateMessageData {
   conversationId: number;
@@ -108,5 +109,71 @@ export class MessageService {
     }
 
     return message;
+  }
+  /**
+   * Lists messages for a specific conversation with cursor-based pagination.
+   * @param userId The ID of the user requesting the messages.
+   * @param conversationId The ID of the conversation.
+   * @param query The pagination query parameters (limit, cursor).
+   * @returns A paginated list of messages with the next cursor.
+   */
+  async listByConversation(
+    userId: string,
+    conversationId: number,
+    query: ListMessagesDto
+  ) {
+    const { limit = 30, cursor } = query;
+
+    // First, verify the user has access to this conversation.
+    const conversation = await this.entityManager
+      .getRepository(Conversation)
+      .findOne({
+        where: { id: conversationId },
+        relations: ['connectedPage'],
+      });
+
+    if (!conversation || conversation.connectedPage.userId !== userId) {
+      throw new NotFoundException(
+        `Conversation with ID ${conversationId} not found for this user.`
+      );
+    }
+
+    const qb = this.messageRepository
+      .createQueryBuilder('message')
+      .leftJoinAndSelect('message.conversation', 'conversation')
+      .where('message.conversationId = :conversationId', { conversationId })
+      .orderBy('message.createdAtFacebook', 'DESC')
+      .take(limit);
+
+    if (cursor) {
+      try {
+        const decodedCursor = Buffer.from(cursor, 'base64').toString('ascii');
+        const [timestamp, id] = decodedCursor.split('_');
+        const cursorDate = new Date(parseInt(timestamp, 10));
+
+        // Add condition to fetch messages older than the cursor
+        qb.andWhere(
+          '(message.createdAtFacebook < :cursorDate OR (message.createdAtFacebook = :cursorDate AND message.id < :id))',
+          { cursorDate, id: parseInt(id, 10) }
+        );
+      } catch (error) {
+        this.logger.error('Invalid cursor format', error);
+        // Handle invalid cursor, maybe throw a BadRequestException
+      }
+    }
+
+    const messages = await qb.getMany();
+
+    let nextCursor: string | null = null;
+    if (messages.length === limit) {
+      const lastMessage = messages[messages.length - 1];
+      const cursorPayload = `${lastMessage.createdAtFacebook.getTime()}_${lastMessage.id}`;
+      nextCursor = Buffer.from(cursorPayload).toString('base64');
+    }
+
+    return {
+      data: messages,
+      next_cursor: nextCursor,
+    };
   }
 }

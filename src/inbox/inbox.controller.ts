@@ -17,6 +17,7 @@ import { ListConversationsDto } from './dto/list-conversations.dto';
 import type { AuthenticatedRequest } from '../common/types/authenticated-request.interface';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { SendReplyDto } from './dto/send-reply.dto';
+import { ListMessagesDto } from './dto/list-messages.dto';
 
 @Controller('api/v1/inbox')
 @UseGuards(JwtAuthGuard)
@@ -58,5 +59,18 @@ export class InboxController {
     if (body.read === true) {
       return this.conversationService.markAsRead(conversationId);
     }
+  }
+
+  @Get('conversations/:id/messages')
+  listMessages(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseIntPipe) conversationId: number,
+    @Query() query: ListMessagesDto
+  ) {
+    return this.messageService.listByConversation(
+      req.user.id,
+      conversationId,
+      query
+    );
   }
 }
