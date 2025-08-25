@@ -10,6 +10,8 @@ import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import * as dotenv from 'dotenv';
 import { ConfigService } from '@nestjs/config';
 import { FacebookParticipant } from '../inbox/entities/facebook-participant.entity';
+import { TwoFactorRecoveryCode } from 'src/auth/entities/two-factor-recovery-code.entity';
+import { SocialAccount } from 'src/auth/entities/social-account.entity';
 
 dotenv.config();
 
@@ -32,6 +34,8 @@ export const AppDataSource = new DataSource({
     Message,
     Comment,
     FacebookParticipant,
+    TwoFactorRecoveryCode,
+    SocialAccount,
   ],
   migrations: ['src/database/migrations/*.ts'],
   namingStrategy: new SnakeNamingStrategy(),

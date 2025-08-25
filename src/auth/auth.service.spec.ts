@@ -13,19 +13,35 @@ import { ConfigService } from '@nestjs/config';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { EntityManager } from 'typeorm';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, ConflictException } from '@nestjs/common';
 import { User, UserStatus } from '../user/entities/user.entity';
+import { EncryptionService } from '../common/services/encryption.service';
+import * as bcrypt from 'bcrypt';
+
+jest.mock('../common/services/encryption.service');
 
 describe('AuthService', () => {
   let service: AuthService;
-  let userService: UserService;
+  let userService: jest.Mocked<UserService>;
   let entityManager: EntityManager;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
-        UserService,
+        {
+          provide: UserService,
+          useValue: {
+            findOneByEmail: jest.fn(),
+            create: jest.fn(),
+            setCurrentRefreshToken: jest.fn(),
+            updateLastLogin: jest.fn(),
+            findOneById: jest.fn(),
+            verifyRefreshToken: jest.fn(),
+            removeAllRefreshTokensForUser: jest.fn(),
+            invalidateAllTokens: jest.fn(),
+          },
+        },
         {
           provide: JwtService,
           useValue: { signAsync: jest.fn() },
@@ -43,30 +59,67 @@ describe('AuthService', () => {
         {
           provide: EntityManager,
           useValue: {
-            transaction: jest.fn(),
+            transaction: jest
+              .fn()
+              .mockImplementation(async (cb) => cb(entityManager)),
+            getRepository: jest
+              .fn()
+              .mockReturnValue({
+                findOne: jest.fn(),
+                create: jest.fn(),
+                save: jest.fn(),
+              }),
           },
         },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
-    userService = module.get<UserService>(UserService);
-    entityManager = module.get<EntityManager>(EntityManager);
-
-    (entityManager.transaction as jest.Mock).mockImplementation(async (cb) => {
-      const mockManager = {
-        getRepository: jest.fn().mockReturnValue({
-          findOne: jest.fn(),
-          create: jest.fn(),
-          save: jest.fn(),
-        }),
-      };
-      return cb(mockManager);
-    });
+    userService = module.get(UserService);
+    entityManager = module.get(EntityManager);
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('register', () => {
+    it('should register a new user successfully', async () => {
+      const registerDto = {
+        email: 'test@example.com',
+        password: 'password',
+        fullName: 'Test User',
+      };
+      const hashedPassword = 'hashedPassword';
+      const newUser = {
+        id: 'userId',
+        ...registerDto,
+        passwordHash: hashedPassword,
+      };
+
+      userService.findOneByEmail.mockResolvedValue(null);
+      (bcrypt.hash as jest.Mock).mockResolvedValue(hashedPassword);
+      userService.create.mockResolvedValue(newUser as any);
+
+      const result = await service.register(registerDto);
+
+      expect(result).toEqual(newUser);
+    });
+
+    it('should throw a ConflictException if the email is already in use', async () => {
+      const registerDto = {
+        email: 'test@example.com',
+        password: 'password',
+        fullName: 'Test User',
+      };
+      const existingUser = { id: 'userId', ...registerDto };
+
+      userService.findOneByEmail.mockResolvedValue(existingUser as any);
+
+      await expect(service.register(registerDto)).rejects.toThrow(
+        ConflictException
+      );
+    });
   });
 
   describe('login', () => {
@@ -76,8 +129,6 @@ describe('AuthService', () => {
       user.email = 'test@example.com';
       const tokens = { accessToken: 'access', refreshToken: 'refresh' };
       jest.spyOn(service as any, '_generateTokens').mockResolvedValue(tokens);
-      (userService.setCurrentRefreshToken as jest.Mock).mockResolvedValue(undefined);
-      (userService.updateLastLogin as jest.Mock).mockResolvedValue(undefined);
 
       const result = await service.login(user, 'ip', 'ua');
 
@@ -94,10 +145,9 @@ describe('AuthService', () => {
       user.email = 'test@example.com';
       user.status = UserStatus.ACTIVE;
       const tokens = { accessToken: 'newAccess', refreshToken: 'newRefresh' };
-      (userService.findOneById as jest.Mock).mockResolvedValue(user);
-      (userService.verifyRefreshToken as jest.Mock).mockResolvedValue(true);
+      userService.findOneById.mockResolvedValue(user);
+      userService.verifyRefreshToken.mockResolvedValue(true);
       jest.spyOn(service as any, '_generateTokens').mockResolvedValue(tokens);
-      (userService.setCurrentRefreshToken as jest.Mock).mockResolvedValue(undefined);
 
       const result = await service.refreshTokens('userId', 'refreshToken');
 
@@ -106,16 +156,20 @@ describe('AuthService', () => {
     });
 
     it('should throw ForbiddenException if user not found or inactive', async () => {
-        (userService.findOneById as jest.Mock).mockResolvedValue(null);
-        await expect(service.refreshTokens('userId', 'refreshToken')).rejects.toThrow(ForbiddenException);
-      });
-  
-      it('should throw ForbiddenException for invalid refresh token', async () => {
-        const user = new User();
-        user.status = UserStatus.ACTIVE;
-        (userService.findOneById as jest.Mock).mockResolvedValue(user);
-        (userService.verifyRefreshToken as jest.Mock).mockResolvedValue(false);
-        await expect(service.refreshTokens('userId', 'refreshToken')).rejects.toThrow(ForbiddenException);
-      });
+      userService.findOneById.mockResolvedValue(null as any);
+      await expect(
+        service.refreshTokens('userId', 'refreshToken')
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw ForbiddenException for invalid refresh token', async () => {
+      const user = new User();
+      user.status = UserStatus.ACTIVE;
+      userService.findOneById.mockResolvedValue(user);
+      userService.verifyRefreshToken.mockResolvedValue(false);
+      await expect(
+        service.refreshTokens('userId', 'refreshToken')
+      ).rejects.toThrow(ForbiddenException);
+    });
   });
 });

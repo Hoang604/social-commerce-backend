@@ -4,10 +4,13 @@ import { AuthService } from './auth.service';
 import { Response } from 'express';
 import { User } from '../user/entities/user.entity';
 import { RegisterDto } from './dto/register.dto';
+import { ConfigService } from '@nestjs/config';
+import { HttpStatus } from '@nestjs/common';
 
 describe('AuthController', () => {
   let controller: AuthController;
   let authService: AuthService;
+  let configService: ConfigService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -23,11 +26,18 @@ describe('AuthController', () => {
             logoutAll: jest.fn(),
           },
         },
+        {
+            provide: ConfigService,
+            useValue: {
+                get: jest.fn(),
+            }
+        }
       ],
     }).compile();
 
     controller = module.get<AuthController>(AuthController);
     authService = module.get<AuthService>(AuthService);
+    configService = module.get<ConfigService>(ConfigService);
   });
 
   it('should be defined', () => {
@@ -198,6 +208,49 @@ describe('AuthController', () => {
       expect(result).toEqual({
         message: 'Đã đăng xuất khỏi tất cả các thiết bị.',
       });
+    });
+  });
+
+  describe('facebookLogin', () => {
+    it('should return HttpStatus.OK', async () => {
+        const result = await controller.facebookLogin();
+        expect(result).toEqual(HttpStatus.OK);
+    });
+  });
+
+  describe('facebookLoginCallback', () => {
+    it('should redirect to the dashboard if 2FA is not enabled', async () => {
+        const user = new User();
+        const req = { user };
+        const res = {
+            cookie: jest.fn(),
+            redirect: jest.fn(),
+        } as unknown as Response;
+        const tokens = { accessToken: 'access', refreshToken: 'refresh' };
+        (authService.login as jest.Mock).mockResolvedValue(tokens);
+        (configService.get as jest.Mock).mockReturnValue('http://dashboard');
+
+        await controller.facebookLoginCallback(req, res);
+
+        expect(res.cookie).toHaveBeenCalledWith('refresh_token', 'refresh', expect.any(Object));
+        expect(res.redirect).toHaveBeenCalledWith('http://dashboard');
+    });
+
+    it('should redirect to the 2FA page if 2FA is enabled', async () => {
+        const user = new User();
+        const req = { user };
+        const res = {
+            cookie: jest.fn(),
+            redirect: jest.fn(),
+        } as unknown as Response;
+        const tokens = { accessToken: 'partial-access' };
+        (authService.login as jest.Mock).mockResolvedValue(tokens);
+        (configService.get as jest.Mock).mockReturnValue('http://2fa');
+
+        await controller.facebookLoginCallback(req, res);
+
+        expect(res.cookie).toHaveBeenCalledWith('2fa_partial_token', 'partial-access', expect.any(Object));
+        expect(res.redirect).toHaveBeenCalledWith('http://2fa');
     });
   });
 });

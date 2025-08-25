@@ -6,6 +6,9 @@ import { CreateUserDto } from './dto/create-user-dto';
 import { UpdateUserDto } from './dto/update-user-dto';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import * as bcrypt from 'bcrypt';
+import { EncryptionService } from '../common/services/encryption.service';
+import { TwoFactorRecoveryCode } from '../auth/entities/two-factor-recovery-code.entity';
+import * as crypto from 'crypto';
 
 interface SetRefreshTokenOptions {
   refreshToken: string;
@@ -23,7 +26,8 @@ export class UserService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(RefreshToken)
     private readonly refreshTokenRepository: Repository<RefreshToken>,
-    private readonly entityManager: EntityManager
+    private readonly entityManager: EntityManager,
+    private readonly encryptionService: EncryptionService
   ) {}
 
   /**
@@ -230,5 +234,76 @@ export class UserService {
     }
 
     return false;
+  }
+
+  async turnOnTwoFactorAuthentication(
+    userId: string,
+    secret: string
+  ): Promise<{ user: User; recoveryCodes: string[] }> {
+    return this.entityManager.transaction(async (manager) => {
+      const userRepo = manager.getRepository(User);
+      const recoveryCodeRepo = manager.getRepository(TwoFactorRecoveryCode);
+
+      // 1. Encrypt the secret for storage
+      const encryptedSecret = this.encryptionService.encrypt(secret);
+
+      // 2. Update the user record
+      await userRepo.update(userId, {
+        isTwoFactorAuthenticationEnabled: true,
+        twoFactorAuthenticationSecret: encryptedSecret,
+      });
+
+      // 3. Generate and hash recovery codes
+      const plaintextRecoveryCodes = Array.from({ length: 10 }, () =>
+        crypto.randomBytes(8).toString('hex')
+      );
+
+      const hashedCodes = await Promise.all(
+        plaintextRecoveryCodes.map(async (code) => ({
+          userId,
+          hashedCode: await bcrypt.hash(code, 12),
+          isUsed: false,
+        }))
+      );
+
+      // 4. Clear old codes and save new ones
+      await recoveryCodeRepo.delete({ userId });
+      await recoveryCodeRepo.save(hashedCodes);
+
+      const updatedUser = await userRepo.findOneBy({ id: userId });
+      if (!updatedUser) {
+        throw new Error(`User with ID ${userId} not found`);
+      }
+
+      return { user: updatedUser, recoveryCodes: plaintextRecoveryCodes };
+    });
+  }
+
+  /**
+   * Disables 2FA for a user and removes all associated data.
+   * @param userId The ID of the user.
+   * @returns The updated user.
+   */
+  async turnOffTwoFactorAuthentication(userId: string): Promise<User> {
+    return this.entityManager.transaction(async (manager) => {
+      const userRepo = manager.getRepository(User);
+      const recoveryCodeRepo = manager.getRepository(TwoFactorRecoveryCode);
+
+      // 1. Clear 2FA data from the user record
+      await userRepo.update(userId, {
+        isTwoFactorAuthenticationEnabled: false,
+        twoFactorAuthenticationSecret: null,
+      });
+
+      // 2. Delete all recovery codes for the user
+      await recoveryCodeRepo.delete({ userId });
+
+      const user = await userRepo.findOneBy({ id: userId });
+      if (!user) {
+        throw new Error(`User with ID ${userId} not found`);
+      }
+
+      return user;
+    });
   }
 }

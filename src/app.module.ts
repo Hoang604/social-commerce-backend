@@ -18,6 +18,7 @@ import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { RawBodyMiddleware } from './common/middleware/raw-body.middleware';
 import { FacebookApiModule } from './facebook-api/facebook-api.module';
+import { CommonModule } from './common/common.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { FacebookApiModule } from './facebook-api/facebook-api.module';
     UsageModule,
     RbacModule,
     FacebookApiModule,
+    CommonModule,
   ],
   controllers: [AppController],
   providers: [AppService],

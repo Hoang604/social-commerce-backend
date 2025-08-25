@@ -7,14 +7,21 @@ import { CreateUserDto } from './dto/create-user-dto';
 import { UpdateUserDto } from './dto/update-user-dto';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import * as bcrypt from 'bcrypt';
+import { TwoFactorRecoveryCode } from '../auth/entities/two-factor-recovery-code.entity';
+
+import { EncryptionService } from '../common/services/encryption.service';
+import * as crypto from 'crypto';
 
 jest.mock('bcrypt');
+jest.mock('../common/services/encryption.service');
+jest.mock('crypto');
 
 describe('UserService', () => {
   let service: UserService;
   let userRepository: Repository<User>;
   let refreshTokenRepository: Repository<RefreshToken>;
   let entityManager: EntityManager;
+  let encryptionService: jest.Mocked<EncryptionService>;
 
   const USER_REPOSITORY_TOKEN = getRepositoryToken(User);
   const REFRESH_TOKEN_REPOSITORY_TOKEN = getRepositoryToken(RefreshToken);
@@ -31,6 +38,7 @@ describe('UserService', () => {
             preload: jest.fn(),
             findOne: jest.fn(),
             update: jest.fn(),
+            findOneBy: jest.fn(),
           },
         },
         {
@@ -53,8 +61,15 @@ describe('UserService', () => {
             create: jest.fn(),
             save: jest.fn(),
             update: jest.fn(),
+            getRepository: jest.fn(),
           },
         },
+        {
+            provide: EncryptionService,
+            useValue: {
+                encrypt: jest.fn(),
+            }
+        }
       ],
     }).compile();
 
@@ -64,6 +79,7 @@ describe('UserService', () => {
       REFRESH_TOKEN_REPOSITORY_TOKEN
     );
     entityManager = module.get<EntityManager>(EntityManager);
+    encryptionService = module.get(EncryptionService);
 
     (entityManager.transaction as jest.Mock).mockImplementation(async (cb) => {
       return await cb(entityManager);
@@ -392,6 +408,73 @@ describe('UserService', () => {
       const result = await service.verifyRefreshToken(refreshToken, userId);
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('turnOnTwoFactorAuthentication', () => {
+    it('should turn on 2FA for a user', async () => {
+        const userId = 'user-id';
+        const secret = 'secret';
+        const encryptedSecret = 'encrypted-secret';
+        const user = new User();
+        const userRepo = {
+            update: jest.fn(),
+            findOneBy: jest.fn().mockResolvedValue(user)
+        };
+        const recoveryCodeRepo = {
+            delete: jest.fn(),
+            save: jest.fn(),
+        };
+
+        encryptionService.encrypt.mockReturnValue(encryptedSecret);
+        (crypto.randomBytes as jest.Mock).mockImplementation(() => Buffer.from('code'));
+        (bcrypt.hash as jest.Mock).mockResolvedValue('hashedCode');
+        (entityManager.getRepository as jest.Mock).mockImplementation((repo) => {
+            if (repo === User) {
+                return userRepo;
+            }
+            if (repo === TwoFactorRecoveryCode) {
+                return recoveryCodeRepo;
+            }
+        });
+
+        const result = await service.turnOnTwoFactorAuthentication(userId, secret);
+
+        expect(encryptionService.encrypt).toHaveBeenCalledWith(secret);
+        expect(userRepo.update).toHaveBeenCalledWith(userId, { isTwoFactorAuthenticationEnabled: true, twoFactorAuthenticationSecret: encryptedSecret });
+        expect(recoveryCodeRepo.delete).toHaveBeenCalledWith({ userId });
+        expect(recoveryCodeRepo.save).toHaveBeenCalled();
+        expect(result.user).toEqual(user);
+        expect(result.recoveryCodes).toHaveLength(10);
+    });
+  });
+
+  describe('turnOffTwoFactorAuthentication', () => {
+    it('should turn off 2FA for a user', async () => {
+        const userId = 'user-id';
+        const user = new User();
+        const userRepo = {
+            update: jest.fn(),
+            findOneBy: jest.fn().mockResolvedValue(user)
+        };
+        const recoveryCodeRepo = {
+            delete: jest.fn(),
+        };
+
+        (entityManager.getRepository as jest.Mock).mockImplementation((repo) => {
+            if (repo === User) {
+                return userRepo;
+            }
+            if (repo === TwoFactorRecoveryCode) {
+                return recoveryCodeRepo;
+            }
+        });
+
+        const result = await service.turnOffTwoFactorAuthentication(userId);
+
+        expect(userRepo.update).toHaveBeenCalledWith(userId, { isTwoFactorAuthenticationEnabled: false, twoFactorAuthenticationSecret: null });
+        expect(recoveryCodeRepo.delete).toHaveBeenCalledWith({ userId });
+        expect(result).toEqual(user);
     });
   });
 });

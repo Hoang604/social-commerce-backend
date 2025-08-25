@@ -6,9 +6,10 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  OneToOne,
   OneToMany,
 } from 'typeorm';
+import { SocialAccount } from '../../auth/entities/social-account.entity';
+import { TwoFactorRecoveryCode } from '../../auth/entities/two-factor-recovery-code.entity';
 
 export enum UserStatus {
   ACTIVE = 'active',
@@ -25,8 +26,8 @@ export class User {
   @Column({ unique: true, type: 'varchar' })
   email: string;
 
-  @Column({ type: 'varchar' })
-  passwordHash: string;
+  @Column({ type: 'varchar', nullable: true })
+  passwordHash: string | null;
 
   // --- Nhóm 2: Thông tin Cá nhân & UX ---
   @Column({ type: 'varchar', nullable: true })
@@ -55,23 +56,24 @@ export class User {
   @OneToMany(() => RefreshToken, (token) => token.user)
   hashedRefreshTokens: RefreshToken[];
 
-  /*
-  // --- Định nghĩa các mối quan hệ (sẽ được kích hoạt khi bạn tạo các entity tương ứng) ---
-  
-  // Một user chỉ có một subscription
-  @OneToOne(() => Subscription, (subscription) => subscription.user)
-  subscription: Subscription;
-  */
-  /**
-   * Stores the timestamp from which tokens are considered valid.
-   * Used to invalidate all tokens before this time upon logout-all or password change.
-   */
   @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   tokensValidFrom: Date;
 
-  // Một user có thể kết nối nhiều page
   @OneToMany(() => ConnectedPage, (page) => page.user)
   connectedPages: ConnectedPage[];
+
+  // --- Nhóm 5: Tính năng mới (2FA & Social Login) ---
+  @Column({ default: false })
+  isTwoFactorAuthenticationEnabled: boolean;
+
+  @Column({ type: 'text', nullable: true })
+  twoFactorAuthenticationSecret: string | null;
+
+  @OneToMany(() => SocialAccount, (account) => account.user)
+  socialAccounts: SocialAccount[];
+
+  @OneToMany(() => TwoFactorRecoveryCode, (code) => code.user)
+  recoveryCodes: TwoFactorRecoveryCode[];
 
   // --- Nhóm 4: Dấu vết Thời gian ---
   @CreateDateColumn({ type: 'timestamptz' })

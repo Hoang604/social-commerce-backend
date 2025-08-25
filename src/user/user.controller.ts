@@ -13,7 +13,7 @@ import { UserService } from './user.service';
 import { User } from './entities/user.entity';
 import { UpdateUserDto } from './dto/update-user-dto';
 
-@Controller('user')
+@Controller('api/v1/user')
 @UseGuards(JwtAuthGuard)
 export class UserController {
   constructor(private readonly userService: UserService) {}
