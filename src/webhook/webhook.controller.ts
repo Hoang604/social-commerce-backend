@@ -10,12 +10,14 @@ import {
   ForbiddenException,
   Logger,
   ValidationPipe,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Request } from 'express';
 import { WebhookVerificationDto } from './webhook.dto';
 import { WebhookService } from './webhook.service';
+import { SqsService } from './sqs.service';
 
 @Controller('api/v1/webhooks')
 export class WebhookController {
@@ -25,7 +27,7 @@ export class WebhookController {
   constructor(
     private readonly configService: ConfigService,
     private readonly webhookService: WebhookService,
-    private readonly eventEmitter: EventEmitter2
+    private readonly sqsService: SqsService
   ) {
     // Lấy verify token từ config service
     const token = this.configService.get<string>('FACEBOOK_VERIFY_TOKEN');
@@ -56,15 +58,12 @@ export class WebhookController {
 
   @Post()
   @HttpCode(HttpStatus.OK)
-  handleEvent(@Req() req: Request, @Body() body: any) {
+  async handleEvent(@Req() req: Request, @Body() body: any) {
     const signature = req.headers['x-hub-signature-256'] as string;
-    // 'rawBody' được gắn vào request bởi RawBodyMiddleware của chúng ta
     const rawBody = (req as any).rawBody as Buffer;
 
     if (!rawBody) {
-      this.logger.error(
-        'Raw body is missing. Ensure RawBodyMiddleware is applied correctly for this route.'
-      );
+      this.logger.error('Raw body is missing.');
       throw new ForbiddenException('Invalid request format');
     }
 
@@ -72,11 +71,20 @@ export class WebhookController {
       throw new ForbiddenException('Invalid signature');
     }
 
-    this.logger.log('Received valid webhook event');
-    // Phát sự kiện để xử lý bất đồng bộ
-    this.eventEmitter.emit('facebook.event.received', body);
-
-    // Phản hồi ngay lập tức cho Facebook
-    return 'EVENT_RECEIVED';
+    try {
+      // Thay thế EventEmitter bằng SqsService
+      await this.sqsService.sendMessage(body, signature);
+      this.logger.log('Webhook event successfully queued.');
+      return 'EVENT_RECEIVED';
+    } catch (error) {
+      // Nếu không thể gửi vào queue, đây là lỗi nghiêm trọng phía server
+      this.logger.error(
+        'CRITICAL: Could not queue webhook event.',
+        error.stack
+      );
+      throw new InternalServerErrorException(
+        'Failed to process webhook event.'
+      );
+    }
   }
 }
