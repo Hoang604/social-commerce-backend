@@ -8,6 +8,17 @@ services:
       - '6379:6379'
     volumes:
       - redis_data:/data
+  localstack:
+    image: localstack/localstack:latest
+    container_name: social_commerce_localstack
+    environment:
+      - SERVICES=sqs
+      - DEFAULT_REGION=ap-southeast-1
+    ports:
+      - '4566:4566'
+    volumes:
+      - '${TMPDIR:-/tmp/localstack}:/var/lib/localstack'
+      - '/var/run/docker.sock:/var/run/docker.sock'
 
 volumes:
   redis_data:
