@@ -86,7 +86,7 @@ export class AuthService {
         is2FA: true, // A flag to identify this as a 2FA-required token
       };
       const accessToken = await this.jwtService.signAsync(payload, {
-        expiresIn: '5m', // Short-lived
+        expiresIn: '5m',
       });
       return { accessToken }; // Only return the partial access token
     }
