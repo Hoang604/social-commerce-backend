@@ -18,13 +18,19 @@ import type { AuthenticatedRequest } from '../common/types/authenticated-request
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { SendReplyDto } from './dto/send-reply.dto';
 import { ListMessagesDto } from './dto/list-messages.dto';
+import { CommentService } from './services/comment.service';
+import { ReplyToCommentDto } from './dto/reply-to-comment.dto';
+import { GetCurrentUser } from '../common/decorators/get-current-user.decorator';
+import { User } from '../user/entities/user.entity';
+import { PaginationDto } from '../common/dto/pagination.dto';
 
 @Controller('api/v1/inbox')
 @UseGuards(JwtAuthGuard)
 export class InboxController {
   constructor(
     private readonly conversationService: ConversationService,
-    private readonly messageService: MessageService
+    private readonly messageService: MessageService,
+    private readonly commentService: CommentService // Dependency Injected
   ) {}
 
   @Get('conversations')
@@ -72,5 +78,23 @@ export class InboxController {
       conversationId,
       query
     );
+  }
+
+  @Get('posts/:postId/comments')
+  async listComments(
+    @GetCurrentUser() user: User,
+    @Param('postId') postId: string,
+    @Query() paginationDto: PaginationDto
+  ) {
+    return this.commentService.listByPost(user.id, postId, paginationDto);
+  }
+
+  @Post('comments/:commentId/replies')
+  async replyToComment(
+    @GetCurrentUser() user: User,
+    @Param('commentId', ParseIntPipe) commentId: number,
+    @Body() dto: ReplyToCommentDto
+  ) {
+    return this.commentService.replyToComment(user.id, commentId, dto);
   }
 }

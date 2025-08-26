@@ -12,11 +12,11 @@ import { InboxController } from './inbox.controller';
 import { FacebookApiModule } from '../facebook-api/facebook-api.module';
 import { ConnectedPage } from '../facebook-connect/entities/connected-page.entity';
 import { EncryptionService } from '../common/services/encryption.service';
-import { EventEmitterModule } from '@nestjs/event-emitter'; // <-- Bổ sung import
+import { CommentService } from './services/comment.service';
+import { GatewayModule } from '../gateway/gateway.module';
 
 @Module({
   imports: [
-    EventEmitterModule.forRoot(), // <-- Thêm module này
     TypeOrmModule.forFeature([
       Conversation,
       Message,
@@ -25,6 +25,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter'; // <-- Bổ sung imp
       ConnectedPage,
     ]),
     FacebookApiModule,
+    GatewayModule, // Add GatewayModule here
   ],
   providers: [
     ParticipantService,
@@ -32,8 +33,9 @@ import { EventEmitterModule } from '@nestjs/event-emitter'; // <-- Bổ sung imp
     MessageService,
     InboxEventHandlerService,
     EncryptionService,
+    CommentService,
   ],
   controllers: [InboxController],
-  exports: [InboxEventHandlerService],
+  exports: [InboxEventHandlerService, CommentService],
 })
 export class InboxModule {}

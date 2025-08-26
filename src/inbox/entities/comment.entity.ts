@@ -1,3 +1,4 @@
+// src/inbox/entities/comment.entity.ts
 import {
   Entity,
   PrimaryGeneratedColumn,
@@ -7,8 +8,18 @@ import {
   OneToMany,
   JoinColumn,
   Index,
+  UpdateDateColumn,
 } from 'typeorm';
 import { ConnectedPage } from '../../facebook-connect/entities/connected-page.entity';
+import { FacebookParticipant } from './facebook-participant.entity';
+
+// Enum for comment status
+export enum CommentStatus {
+  SENDING = 'sending',
+  SENT = 'sent',
+  FAILED = 'failed',
+  RECEIVED = 'received', // For comments coming from Facebook
+}
 
 @Entity('comments')
 export class Comment {
@@ -37,7 +48,7 @@ export class Comment {
   @OneToMany(() => Comment, (comment) => comment.parentComment)
   replies: Comment[];
 
-  @Column({ unique: true })
+  @Column({ unique: true, nullable: true }) // Can be null initially for optimistic UI
   facebookCommentId: string;
 
   @Index()
@@ -56,9 +67,19 @@ export class Comment {
   @Column()
   fromCustomer: boolean;
 
+  @Column({
+    type: 'enum',
+    enum: CommentStatus,
+    default: CommentStatus.RECEIVED,
+  })
+  status: CommentStatus;
+
   @Column({ type: 'timestamptz' })
   createdAtFacebook: Date;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz' })
+  updatedAt: Date;
 }

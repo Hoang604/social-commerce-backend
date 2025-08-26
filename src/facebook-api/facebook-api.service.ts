@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -9,6 +9,7 @@ import { AxiosError } from 'axios';
 export class FacebookApiService {
   private readonly logger = new Logger(FacebookApiService.name);
   private readonly apiVersion: string;
+  private readonly baseUrl = 'https://graph.facebook.com';
 
   constructor(
     private readonly httpService: HttpService,
@@ -84,5 +85,28 @@ export class FacebookApiService {
     }
     this.logger.error(`${context}: ${error.message}`, error.stack);
     throw new InternalServerErrorException('An internal error occurred.');
+  }
+
+  async replyToComment(
+    pageAccessToken: string,
+    facebookCommentId: string,
+    message: string
+  ): Promise<{ id: string }> {
+    const url = `${this.baseUrl}/${this.apiVersion}/${facebookCommentId}/comments`;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post(
+          url,
+          { message },
+          { params: { access_token: pageAccessToken } }
+        )
+      );
+      return response.data;
+    } catch (error) {
+      this.handleFacebookError(
+        error,
+        `Failed to reply to comment ${facebookCommentId}`
+      );
+    }
   }
 }
