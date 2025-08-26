@@ -18,20 +18,17 @@ jest.mock('crypto');
 
 describe('UserService', () => {
   let service: UserService;
-  let userRepository: Repository<User>;
-  let refreshTokenRepository: Repository<RefreshToken>;
-  let entityManager: EntityManager;
+  let userRepository: jest.Mocked<Repository<User>>;
+  let refreshTokenRepository: jest.Mocked<Repository<RefreshToken>>;
+  let entityManager: jest.Mocked<EntityManager>;
   let encryptionService: jest.Mocked<EncryptionService>;
-
-  const USER_REPOSITORY_TOKEN = getRepositoryToken(User);
-  const REFRESH_TOKEN_REPOSITORY_TOKEN = getRepositoryToken(RefreshToken);
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
         {
-          provide: USER_REPOSITORY_TOKEN,
+          provide: getRepositoryToken(User),
           useValue: {
             create: jest.fn(),
             save: jest.fn(),
@@ -42,7 +39,7 @@ describe('UserService', () => {
           },
         },
         {
-          provide: REFRESH_TOKEN_REPOSITORY_TOKEN,
+          provide: getRepositoryToken(RefreshToken),
           useValue: {
             find: jest.fn(),
             delete: jest.fn(),
@@ -74,11 +71,9 @@ describe('UserService', () => {
     }).compile();
 
     service = module.get<UserService>(UserService);
-    userRepository = module.get<Repository<User>>(USER_REPOSITORY_TOKEN);
-    refreshTokenRepository = module.get<Repository<RefreshToken>>(
-      REFRESH_TOKEN_REPOSITORY_TOKEN
-    );
-    entityManager = module.get<EntityManager>(EntityManager);
+    userRepository = module.get(getRepositoryToken(User));
+    refreshTokenRepository = module.get(getRepositoryToken(RefreshToken));
+    entityManager = module.get(EntityManager);
     encryptionService = module.get(EncryptionService);
 
     (entityManager.transaction as jest.Mock).mockImplementation(async (cb) => {
@@ -100,16 +95,8 @@ describe('UserService', () => {
       const newUser = new User();
       Object.assign(newUser, createUserDto);
 
-      (entityManager.transaction as jest.Mock).mockImplementation(
-        async (cb) => {
-          const transactionalEntityManager = {
-            save: jest.fn().mockResolvedValue(newUser),
-          };
-          return await cb(transactionalEntityManager);
-        }
-      );
-
-      jest.spyOn(userRepository, 'create').mockReturnValue(newUser);
+      userRepository.create.mockReturnValue(newUser);
+      (entityManager.save as jest.Mock).mockResolvedValue(newUser);
 
       const result = await service.create(createUserDto);
 
@@ -125,7 +112,7 @@ describe('UserService', () => {
       const user = new User();
       user.id = userId;
 
-      jest.spyOn(userRepository, 'findOne').mockResolvedValue(user);
+      userRepository.findOne.mockResolvedValue(user);
 
       const result = await service.findOneById(userId);
 
@@ -138,7 +125,7 @@ describe('UserService', () => {
     it('should throw an error if user is not found', async () => {
       const userId = 'some-uuid';
 
-      jest.spyOn(userRepository, 'findOne').mockResolvedValue(null);
+      userRepository.findOne.mockResolvedValue(null);
 
       await expect(service.findOneById(userId)).rejects.toThrow(
         `User with ID ${userId} not found`
@@ -156,16 +143,8 @@ describe('UserService', () => {
       const updatedUser = new User();
       Object.assign(updatedUser, existingUser, updateUserDto);
 
-      (entityManager.transaction as jest.Mock).mockImplementation(
-        async (cb) => {
-          const transactionalEntityManager = {
-            save: jest.fn().mockResolvedValue(updatedUser),
-          };
-          return await cb(transactionalEntityManager);
-        }
-      );
-
-      jest.spyOn(userRepository, 'preload').mockResolvedValue(updatedUser);
+      userRepository.preload.mockResolvedValue(updatedUser);
+      (entityManager.save as jest.Mock).mockResolvedValue(updatedUser);
 
       const result = await service.updateProfile(userId, updateUserDto);
 
@@ -183,16 +162,7 @@ describe('UserService', () => {
         fullName: 'Test User',
       };
 
-      (entityManager.transaction as jest.Mock).mockImplementation(
-        async (cb) => {
-          const transactionalEntityManager = {
-            save: jest.fn(),
-          };
-          return await cb(transactionalEntityManager);
-        }
-      );
-
-      jest.spyOn(userRepository, 'preload').mockResolvedValue(undefined);
+      userRepository.preload.mockResolvedValue(undefined);
 
       await expect(
         service.updateProfile(userId, updateUserDto)
@@ -220,7 +190,7 @@ describe('UserService', () => {
       user.status = UserStatus.INACTIVE; // Start with a different status
 
       jest.spyOn(service, 'findOneById').mockResolvedValue(user);
-      jest.spyOn(userRepository, 'save').mockResolvedValue(user);
+      userRepository.save.mockResolvedValue(user);
 
       const result = await service.activate(userId);
 
@@ -240,7 +210,7 @@ describe('UserService', () => {
       user.status = UserStatus.ACTIVE; // Start with a different status
 
       jest.spyOn(service, 'findOneById').mockResolvedValue(user);
-      jest.spyOn(userRepository, 'save').mockResolvedValue(user);
+      userRepository.save.mockResolvedValue(user);
 
       const result = await service.deactivate(userId);
 
@@ -261,7 +231,7 @@ describe('UserService', () => {
 
     beforeEach(() => {
       (bcrypt.hash as jest.Mock).mockResolvedValue(hashedToken);
-      (userRepository.findOne as jest.Mock).mockResolvedValue(user);
+      userRepository.findOne.mockResolvedValue(user);
     });
 
     it('should save a new refresh token', async () => {
@@ -314,8 +284,22 @@ describe('UserService', () => {
       expect(entityManager.remove).toHaveBeenCalledWith(oldToken);
     });
 
+    it('should not remove any token if expiredRefreshToken is not found', async () => {
+        const expiredRefreshToken = 'expired-token';
+        (entityManager.findOne as jest.Mock).mockResolvedValue(null);
+  
+        await service.setCurrentRefreshToken({
+          refreshToken,
+          userId,
+          expiresAt,
+          expiredRefreshToken,
+        });
+  
+        expect(entityManager.remove).not.toHaveBeenCalled();
+      });
+
     it('should throw an error if user is not found', async () => {
-      (userRepository.findOne as jest.Mock).mockResolvedValue(null);
+      userRepository.findOne.mockResolvedValue(null);
 
       await expect(
         service.setCurrentRefreshToken({ refreshToken, userId, expiresAt })
@@ -357,7 +341,7 @@ describe('UserService', () => {
         hashedToken: 'hashed-token',
         expiresAt: new Date(Date.now() + 100000),
       } as RefreshToken;
-      (refreshTokenRepository.find as jest.Mock).mockResolvedValue([
+      refreshTokenRepository.find.mockResolvedValue([
         storedToken,
       ]);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
@@ -374,7 +358,7 @@ describe('UserService', () => {
         hashedToken: 'hashed-token',
         expiresAt: new Date(Date.now() + 100000),
       } as RefreshToken;
-      (refreshTokenRepository.find as jest.Mock).mockResolvedValue([
+      refreshTokenRepository.find.mockResolvedValue([
         storedToken,
       ]);
       (bcrypt.compare as jest.Mock).mockResolvedValue(false);
@@ -390,7 +374,7 @@ describe('UserService', () => {
         hashedToken: 'hashed-token',
         expiresAt: new Date(Date.now() - 100000),
       } as RefreshToken;
-      (refreshTokenRepository.find as jest.Mock).mockResolvedValue([
+      refreshTokenRepository.find.mockResolvedValue([
         storedToken,
       ]);
 
@@ -403,7 +387,7 @@ describe('UserService', () => {
     });
 
     it('should return false if no tokens are found', async () => {
-      (refreshTokenRepository.find as jest.Mock).mockResolvedValue([]);
+      refreshTokenRepository.find.mockResolvedValue([]);
 
       const result = await service.verifyRefreshToken(refreshToken, userId);
 

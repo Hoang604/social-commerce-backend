@@ -8,7 +8,7 @@ import { ConnectedPage } from '../../facebook-connect/entities/connected-page.en
 
 describe('ConversationService', () => {
   let service: ConversationService;
-  let repository: Repository<Conversation>;
+  let repository: jest.Mocked<Repository<Conversation>>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -16,13 +16,21 @@ describe('ConversationService', () => {
         ConversationService,
         {
           provide: getRepositoryToken(Conversation),
-          useClass: Repository,
+          useValue: {
+            findOne: jest.fn(),
+            create: jest.fn(),
+            save: jest.fn(),
+            increment: jest.fn(),
+            update: jest.fn(),
+            createQueryBuilder: jest.fn(),
+            findOneBy: jest.fn(),
+          }
         },
       ],
     }).compile();
 
     service = module.get<ConversationService>(ConversationService);
-    repository = module.get<Repository<Conversation>>(getRepositoryToken(Conversation));
+    repository = module.get(getRepositoryToken(Conversation));
   });
 
   it('should be defined', () => {
@@ -57,13 +65,60 @@ describe('ConversationService', () => {
         const result = await service.findOrCreateByFacebookIds('fbPageId', 1, 'fbConvId', manager);
         expect(result).toEqual({ id: 2 });
     });
+
+    it('should throw NotFoundException if page is not found', async () => {
+        const manager = {
+            getRepository: jest.fn().mockReturnValue({
+                findOne: jest.fn().mockResolvedValueOnce(null),
+            }),
+        } as any;
+
+        await expect(service.findOrCreateByFacebookIds('fbPageId', 1, 'fbConvId', manager)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('updateMetadata', () => {
+    it('should increment unreadCount and update last message details', async () => {
+        const manager = {
+            getRepository: jest.fn().mockReturnValue({
+                increment: jest.fn(),
+                update: jest.fn(),
+            }),
+        } as any;
+        const lastMessage = { content: 'test', createdAtFacebook: new Date() } as any;
+
+        await service.updateMetadata(1, lastMessage, 1, manager);
+
+        expect(manager.getRepository().increment).toHaveBeenCalledWith({ id: 1 }, 'unreadCount', 1);
+        expect(manager.getRepository().update).toHaveBeenCalledWith({ id: 1 }, expect.any(Object));
+    });
+  });
+
+  describe('listByPage', () => {
+    it('should return a paginated list of conversations for a user and page', async () => {
+        const qb = {
+            leftJoin: jest.fn().mockReturnThis(),
+            leftJoinAndSelect: jest.fn().mockReturnThis(),
+            where: jest.fn().mockReturnThis(),
+            andWhere: jest.fn().mockReturnThis(),
+            orderBy: jest.fn().mockReturnThis(),
+            skip: jest.fn().mockReturnThis(),
+            take: jest.fn().mockReturnThis(),
+            getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+        };
+        repository.createQueryBuilder.mockReturnValue(qb as any);
+
+        await service.listByPage('userId', { connectedPageId: 1, page: 1, limit: 10 });
+
+        expect(qb.getManyAndCount).toHaveBeenCalled();
+    });
   });
 
   describe('updateStatus', () => {
     it('should update conversation status', async () => {
       const conversation = new Conversation();
-      jest.spyOn(repository, 'findOneBy').mockResolvedValue(conversation);
-      jest.spyOn(repository, 'save').mockResolvedValue(conversation);
+      repository.findOneBy.mockResolvedValue(conversation);
+      repository.save.mockResolvedValue(conversation);
 
       const result = await service.updateStatus(1, ConversationStatus.CLOSED);
 
@@ -71,7 +126,7 @@ describe('ConversationService', () => {
     });
 
     it('should throw NotFoundException if conversation not found', async () => {
-      jest.spyOn(repository, 'findOneBy').mockResolvedValue(null);
+      repository.findOneBy.mockResolvedValue(null);
       await expect(service.updateStatus(1, ConversationStatus.CLOSED)).rejects.toThrow(NotFoundException);
     });
   });
@@ -80,8 +135,8 @@ describe('ConversationService', () => {
     it('should mark conversation as read', async () => {
       const conversation = new Conversation();
       conversation.unreadCount = 5;
-      jest.spyOn(repository, 'findOneBy').mockResolvedValue(conversation);
-      jest.spyOn(repository, 'save').mockResolvedValue(conversation);
+      repository.findOneBy.mockResolvedValue(conversation);
+      repository.save.mockResolvedValue(conversation);
 
       const result = await service.markAsRead(1);
 
@@ -89,7 +144,7 @@ describe('ConversationService', () => {
     });
 
     it('should throw NotFoundException if conversation not found', async () => {
-      jest.spyOn(repository, 'findOneBy').mockResolvedValue(null);
+      repository.findOneBy.mockResolvedValue(null);
       await expect(service.markAsRead(1)).rejects.toThrow(NotFoundException);
     });
   });

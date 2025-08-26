@@ -25,6 +25,7 @@ describe('InboxController', () => {
           provide: MessageService,
           useValue: {
             sendReply: jest.fn(),
+            listByConversation: jest.fn(),
           },
         },
       ],
@@ -70,6 +71,15 @@ describe('InboxController', () => {
       const body = { read: true };
       await controller.updateConversation(1, body);
       expect(conversationService.markAsRead).toHaveBeenCalledWith(1);
+    });
+  });
+
+  describe('listMessages', () => {
+    it('should call messageService.listByConversation', async () => {
+      const req = { user: { id: 'userId' } };
+      const query = { page: 1, limit: 10 };
+      await controller.listMessages(req as any, 1, query);
+      expect(messageService.listByConversation).toHaveBeenCalledWith('userId', 1, query);
     });
   });
 });

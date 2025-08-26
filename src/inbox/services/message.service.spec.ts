@@ -11,11 +11,11 @@ import { NotFoundException } from '@nestjs/common';
 
 describe('MessageService', () => {
   let service: MessageService;
-  let repository: Repository<Message>;
-  let facebookApiService: FacebookApiService;
-  let encryptionService: EncryptionService;
-  let eventEmitter: EventEmitter2;
-  let entityManager: EntityManager;
+  let repository: jest.Mocked<Repository<Message>>;
+  let facebookApiService: jest.Mocked<FacebookApiService>;
+  let encryptionService: jest.Mocked<EncryptionService>;
+  let eventEmitter: jest.Mocked<EventEmitter2>;
+  let entityManager: jest.Mocked<EntityManager>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -23,7 +23,10 @@ describe('MessageService', () => {
         MessageService,
         {
           provide: getRepositoryToken(Message),
-          useClass: Repository,
+          useValue: {
+            save: jest.fn(),
+            createQueryBuilder: jest.fn(),
+          }
         },
         {
           provide: FacebookApiService,
@@ -49,11 +52,11 @@ describe('MessageService', () => {
     }).compile();
 
     service = module.get<MessageService>(MessageService);
-    repository = module.get<Repository<Message>>(getRepositoryToken(Message));
-    facebookApiService = module.get<FacebookApiService>(FacebookApiService);
-    encryptionService = module.get<EncryptionService>(EncryptionService);
-    eventEmitter = module.get<EventEmitter2>(EventEmitter2);
-    entityManager = module.get<EntityManager>(EntityManager);
+    repository = module.get(getRepositoryToken(Message));
+    facebookApiService = module.get(FacebookApiService);
+    encryptionService = module.get(EncryptionService);
+    eventEmitter = module.get(EventEmitter2);
+    entityManager = module.get(EntityManager);
   });
 
   it('should be defined', () => {
@@ -74,9 +77,9 @@ describe('MessageService', () => {
         const conversation = new Conversation();
         conversation.connectedPage = { userId: 'userId', encryptedPageAccessToken: 'token' } as any;
         conversation.participant = { facebookUserId: 'fbUserId' } as any;
-        jest.spyOn(entityManager.getRepository(Conversation), 'findOne').mockResolvedValue(conversation);
-        jest.spyOn(repository, 'save').mockImplementation(async (message) => message as any);
-        (facebookApiService.sendMessage as jest.Mock).mockResolvedValue({ message_id: 'fbMessageId' });
+        (entityManager.getRepository(Conversation).findOne as jest.Mock).mockResolvedValue(conversation);
+        repository.save.mockImplementation(async (message) => message as any);
+        facebookApiService.sendMessage.mockResolvedValue({ message_id: 'fbMessageId' });
 
         const result = await service.sendReply('userId', 1, 'text');
 
@@ -89,9 +92,9 @@ describe('MessageService', () => {
         const conversation = new Conversation();
         conversation.connectedPage = { userId: 'userId', encryptedPageAccessToken: 'token' } as any;
         conversation.participant = { facebookUserId: 'fbUserId' } as any;
-        jest.spyOn(entityManager.getRepository(Conversation), 'findOne').mockResolvedValue(conversation);
-        jest.spyOn(repository, 'save').mockImplementation(async (message) => message as any);
-        (facebookApiService.sendMessage as jest.Mock).mockRejectedValue(new Error('FB error'));
+        (entityManager.getRepository(Conversation).findOne as jest.Mock).mockResolvedValue(conversation);
+        repository.save.mockImplementation(async (message) => message as any);
+        facebookApiService.sendMessage.mockRejectedValue(new Error('FB error'));
 
         const result = await service.sendReply('userId', 1, 'text');
 
@@ -101,8 +104,34 @@ describe('MessageService', () => {
     });
 
     it('should throw NotFoundException if conversation not found', async () => {
-        jest.spyOn(entityManager.getRepository(Conversation), 'findOne').mockResolvedValue(null);
+        (entityManager.getRepository(Conversation).findOne as jest.Mock).mockResolvedValue(null);
         await expect(service.sendReply('userId', 1, 'text')).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('listByConversation', () => {
+    it('should throw NotFoundException if conversation is not found for the user', async () => {
+        (entityManager.getRepository(Conversation).findOne as jest.Mock).mockResolvedValue(null);
+        await expect(service.listByConversation('userId', 1, {})).rejects.toThrow(NotFoundException);
+    });
+
+    it('should return a paginated list of messages', async () => {
+        const conversation = { connectedPage: { userId: 'userId' } };
+        (entityManager.getRepository(Conversation).findOne as jest.Mock).mockResolvedValue(conversation as any);
+        const qb = {
+            leftJoinAndSelect: jest.fn().mockReturnThis(),
+            where: jest.fn().mockReturnThis(),
+            orderBy: jest.fn().mockReturnThis(),
+            take: jest.fn().mockReturnThis(),
+            andWhere: jest.fn().mockReturnThis(),
+            getMany: jest.fn().mockResolvedValue([]),
+        };
+        repository.createQueryBuilder.mockReturnValue(qb as any);
+
+        const result = await service.listByConversation('userId', 1, { limit: 10 });
+
+        expect(result.data).toEqual([]);
+        expect(qb.getMany).toHaveBeenCalled();
     });
   });
 });

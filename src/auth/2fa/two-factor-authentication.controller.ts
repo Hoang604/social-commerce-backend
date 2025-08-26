@@ -18,7 +18,7 @@ import type { AuthenticatedRequest } from '../../common/types/authenticated-requ
 import { UserService } from '../../user/user.service';
 import { TurnOn2faDto } from './dto/turn-on-2fa.dto';
 import { AuthService } from '../auth.service';
-import { EncryptionService } from 'src/common/services/encryption.service';
+import { EncryptionService } from '../../common/services/encryption.service';
 import * as bcrypt from 'bcrypt';
 
 @Controller('api/v1/2fa')
