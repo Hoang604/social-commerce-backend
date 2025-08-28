@@ -15,6 +15,8 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
     const callbackURL = configService.get<string>(
       'FACEBOOK_LOGIN_CALLBACK_URL'
     );
+    const apiVersion =
+      configService.get<string>('FACEBOOK_API_VERSION') || 'v23.0';
 
     if (!clientID || !clientSecret || !callbackURL) {
       throw new InternalServerErrorException(
@@ -28,7 +30,7 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
       callbackURL,
       scope: ['email', 'public_profile'],
       profileFields: ['id', 'name', 'emails', 'picture'],
-      graphAPIVersion: 'v23.0',
+      graphAPIVersion: apiVersion,
     });
   }
 
@@ -38,22 +40,26 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
     profile: Profile,
     done: (err: any, user: any, info?: any) => void
   ): Promise<any> {
-    const { name, emails, photos, id } = profile;
+    try {
+      const { name, emails, photos, id } = profile;
 
-    // Safely construct the full name
-    const fullName = [name?.givenName, name?.familyName]
-      .filter(Boolean)
-      .join(' ');
+      // Safely construct the full name
+      const fullName = [name?.givenName, name?.familyName]
+        .filter(Boolean)
+        .join(' ');
 
-    const userProfile = {
-      provider: 'facebook',
-      providerId: id,
-      email: emails?.[0].value,
-      fullName: fullName,
-      avatarUrl: photos?.[0].value,
-    };
+      const userProfile = {
+        provider: 'facebook',
+        providerId: id,
+        email: emails?.[0].value,
+        fullName: fullName,
+        avatarUrl: photos?.[0].value,
+      };
 
-    const user = await this.authService.validateSocialLogin(userProfile);
-    done(null, user);
+      const user = await this.authService.validateSocialLogin(userProfile);
+      done(null, user);
+    } catch (error) {
+      done(error, null);
+    }
   }
 }

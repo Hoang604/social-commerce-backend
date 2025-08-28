@@ -2,6 +2,7 @@ import {
   Injectable,
   ConflictException,
   ForbiddenException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { UserService } from '../user/user.service';
 import { JwtService } from '@nestjs/jwt';
@@ -29,10 +30,10 @@ export class AuthService {
   async register(
     registerDto: RegisterDto
   ): Promise<Omit<User, 'passwordHash'>> {
-    return this.entityManager.transaction(async (entityManager) => {
-      const userService = this.userService;
-
-      const existingUser = await userService.findOneByEmail(registerDto.email);
+    return await this.entityManager.transaction(async (entityManager) => {
+      const existingUser = await this.userService.findOneByEmail(
+        registerDto.email
+      );
       if (existingUser) {
         throw new ConflictException('Email này đã được sử dụng.');
       }
@@ -78,8 +79,13 @@ export class AuthService {
    * @param userAgent the user agent string of the user's device (optional)
    * @returns Promise<{ accessToken: string, refreshToken: string }> the generated tokens
    */
-  async login(user: User, ipAddress?: string, userAgent?: string) {
-    if (user.isTwoFactorAuthenticationEnabled) {
+  async login(
+    user: User,
+    isTwoFactorAuthenticated = false,
+    ipAddress?: string,
+    userAgent?: string
+  ) {
+    if (user.isTwoFactorAuthenticationEnabled && !isTwoFactorAuthenticated) {
       const payload = {
         sub: user.id,
         isTwoFactorAuthenticated: false,
@@ -150,45 +156,50 @@ export class AuthService {
    * @returns Promise<{ accessToken: string, refreshToken: string }> new access and refresh tokens
    */
   async refreshTokens(userId: string, refreshToken: string) {
-    return this.entityManager.transaction(async (entityManager) => {
-      const userService = new UserService(
-        entityManager.getRepository(User),
-        entityManager.getRepository(RefreshToken),
-        entityManager,
-        new EncryptionService(this.configService)
-      );
+    const user = await this.userService.findOneById(userId);
+    if (!user || user.status !== UserStatus.ACTIVE) {
+      throw new ForbiddenException('Access Denied');
+    }
 
-      const user = await userService.findOneById(userId);
-      if (!user || user.status !== UserStatus.ACTIVE) {
-        throw new ForbiddenException('Access Denied');
-      }
-
-      // Verify the refresh token using UserService
-      const isValidToken = await userService.verifyRefreshToken(
+    try {
+      // Verify the refresh token using the injected UserService instance
+      const isValidToken = await this.userService.verifyRefreshToken(
         refreshToken,
         userId
       );
+
+      // If token is not valid (doesn't exist), it's a security risk.
+      // Log out all sessions.
       if (!isValidToken) {
+        await this.logoutAll(userId);
         throw new ForbiddenException('Access Denied');
       }
+    } catch (error) {
+      // If the error is due to an expired token, re-throw it so the user
+      // gets a clear message to log in again.
+      if (error instanceof UnauthorizedException) {
+        throw new UnauthorizedException(
+          'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.'
+        );
+      }
+      // For any other unexpected errors, re-throw them.
+      throw error;
+    }
 
-      // Get user details to generate new tokens
-      const tokens = await this._generateTokens(userId, user.email);
+    // If we reach here, the token was valid. Proceed with rotation.
+    const tokens = await this._generateTokens(userId, user.email);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
 
-      // Calculate new expiration date
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      // Set the new refresh token (this will remove old ones and create a new one)
-      await userService.setCurrentRefreshToken({
-        refreshToken: tokens.refreshToken,
-        userId,
-        expiresAt,
-        expiredRefreshToken: refreshToken,
-      });
-
-      return tokens;
+    // Set the new refresh token (this will remove the old one)
+    await this.userService.setCurrentRefreshToken({
+      refreshToken: tokens.refreshToken,
+      userId,
+      expiresAt,
+      expiredRefreshToken: refreshToken,
     });
+
+    return tokens;
   }
 
   private async _generateTokens(userId: string, email: string) {

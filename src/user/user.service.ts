@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { User, UserStatus } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
@@ -215,24 +215,37 @@ export class UserService {
       where: { userId },
     });
 
-    for (const storedToken of storedTokens) {
-      // Check if token hasn't expired
-      if (storedToken.expiresAt < new Date()) {
-        // Remove expired token
-        await this.refreshTokenRepository.delete(storedToken.id);
-        continue;
-      }
+    // If no tokens exist for the user, it's clearly invalid.
+    if (!storedTokens || storedTokens.length === 0) {
+      return false;
+    }
 
-      // Check if the provided token matches the stored hashed token
+    let matchingToken: RefreshToken | undefined;
+
+    // Find a matching token first
+    for (const storedToken of storedTokens) {
       const isMatch = await bcrypt.compare(
         refreshToken,
         storedToken.hashedToken
       );
       if (isMatch) {
-        return true;
+        matchingToken = storedToken;
+        break;
       }
     }
 
+    // If a match was found, check its expiration
+    if (matchingToken) {
+      if (matchingToken.expiresAt < new Date()) {
+        // Token is expired, remove it from DB and throw a specific error
+        await this.refreshTokenRepository.delete(matchingToken.id);
+        throw new UnauthorizedException('Refresh token has expired');
+      }
+      // Token is valid and not expired
+      return true;
+    }
+
+    // If after checking all tokens, no match was found, the token is invalid.
     return false;
   }
 

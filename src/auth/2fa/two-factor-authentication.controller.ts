@@ -20,6 +20,7 @@ import { TurnOn2faDto } from './dto/turn-on-2fa.dto';
 import { AuthService } from '../auth.service';
 import { EncryptionService } from '../../common/services/encryption.service';
 import * as bcrypt from 'bcrypt';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('api/v1/2fa')
 export class TwoFactorAuthenticationController {
@@ -27,7 +28,8 @@ export class TwoFactorAuthenticationController {
     private readonly twoFactorAuthService: TwoFactorAuthenticationService,
     private readonly userService: UserService,
     private readonly authService: AuthService,
-    private readonly encryptionService: EncryptionService
+    private readonly encryptionService: EncryptionService,
+    private readonly configService: ConfigService
   ) {}
 
   @Post('generate')
@@ -41,7 +43,8 @@ export class TwoFactorAuthenticationController {
     res.cookie('2fa_secret', this.encryptionService.encrypt(secret), {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite:
+        this.configService.get('NODE_ENV') === 'production' ? 'none' : 'lax',
       expires: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes validity
     });
 
@@ -99,7 +102,7 @@ export class TwoFactorAuthenticationController {
     }
 
     const decryptedSecret = this.encryptionService.decrypt(
-      user.twoFactorAuthenticationSecret as any
+      user.twoFactorAuthenticationSecret as string
     );
     const isCodeValid = this.twoFactorAuthService.isCodeValid(
       body.code,
@@ -112,7 +115,7 @@ export class TwoFactorAuthenticationController {
 
     // At this point, the user is fully authenticated. Generate full tokens.
     // The login method needs to be slightly adapted to handle this case.
-    const tokens = await this.authService.login(user);
+    const tokens = await this.authService.login(user, true);
 
     // Return full tokens, setting the refresh token in the cookie
     return tokens;

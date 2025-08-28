@@ -62,7 +62,7 @@ export class User {
   @OneToMany(() => ConnectedPage, (page) => page.user)
   connectedPages: ConnectedPage[];
 
-  // --- Nhóm 5: Tính năng mới (2FA & Social Login) ---
+  // --- Nhóm 4: Tính năng mới (2FA & Social Login) ---
   @Column({ default: false })
   isTwoFactorAuthenticationEnabled: boolean;
 
@@ -75,7 +75,7 @@ export class User {
   @OneToMany(() => TwoFactorRecoveryCode, (code) => code.user)
   recoveryCodes: TwoFactorRecoveryCode[];
 
-  // --- Nhóm 4: Dấu vết Thời gian ---
+  // --- Nhóm 5: Dấu vết Thời gian ---
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

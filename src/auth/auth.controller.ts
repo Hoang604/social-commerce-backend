@@ -8,7 +8,6 @@ import {
   HttpStatus,
   Get,
   Res,
-  Req,
   UnauthorizedException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
@@ -30,7 +29,7 @@ export class AuthController {
 
   @Post('register')
   async register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+    return await this.authService.register(registerDto);
   }
 
   /**
@@ -52,14 +51,19 @@ export class AuthController {
     const ipAddress = req.ip;
     const userAgent = req.headers['user-agent'] || '';
 
-    const result = await this.authService.login(req.user, ipAddress, userAgent);
+    const result = await this.authService.login(
+      req.user,
+      false,
+      ipAddress,
+      userAgent
+    );
 
     if ('refreshToken' in result && result.refreshToken) {
       console.log('Setting refresh_token cookie for user:', req.user.id);
       response.cookie('refresh_token', result.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
         expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
       const { refreshToken, ...responsePayload } = result;
@@ -124,7 +128,6 @@ export class AuthController {
   @Get('facebook')
   @UseGuards(AuthGuard('facebook'))
   async facebookLogin(): Promise<any> {
-    // This route will redirect to Facebook for authentication
     return HttpStatus.OK;
   }
 
@@ -136,20 +139,28 @@ export class AuthController {
       throw new UnauthorizedException('Could not authenticate with Facebook.');
     }
 
-    const tokens = await this.authService.login(user);
+    const ipAddress = req.ip;
+    const userAgent = req.headers['user-agent'] || '';
 
-    // Check if the login resulted in a full session (with a refresh token)
-    // or if it's a partial login pending 2FA verification.
+    const tokens = await this.authService.login(
+      user,
+      false,
+      ipAddress,
+      userAgent
+    );
+
     if ('refreshToken' in tokens) {
       // CASE 1: Full login successful (user does NOT have 2FA enabled)
       response.cookie('refresh_token', tokens.refreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: this.configService.get('NODE_ENV') === 'production',
+        // highlight-start
+        sameSite:
+          this.configService.get('NODE_ENV') === 'production' ? 'none' : 'lax',
+
         expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       });
 
-      // Redirect to the main dashboard
       const frontendUrl = this.configService.get<string>(
         'FRONTEND_DASHBOARD_URL'
       );
@@ -159,17 +170,16 @@ export class AuthController {
       response.redirect(frontendUrl);
     } else {
       // CASE 2: Partial login (user has 2FA enabled)
-      // The 'tokens' object only contains the partial access token.
-
-      // We set this partial token in a temporary cookie to authorize the next step.
       response.cookie('2fa_partial_token', tokens.accessToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        expires: new Date(Date.now() + 5 * 60 * 1000), // Expires in 5 minutes
+        secure: this.configService.get('NODE_ENV') === 'production',
+        // highlight-start
+        sameSite:
+          this.configService.get('NODE_ENV') === 'production' ? 'none' : 'lax',
+        // highlight-end
+        expires: new Date(Date.now() + 5 * 60 * 1000),
       });
 
-      // Redirect to the dedicated 2FA verification page on the frontend
       const twoFactorUrl = this.configService.get<string>('FRONTEND_2FA_URL');
       if (!twoFactorUrl) {
         throw new Error('FRONTEND_2FA_URL is not defined');
