@@ -61,7 +61,7 @@ export class FacebookConnectService {
   ) {
     this.apiVersion = this.configService.get<string>(
       'FACEBOOK_API_VERSION',
-      'v19.0'
+      'v23.0'
     );
     this.appId = this.configService.get<string>('FACEBOOK_APP_ID') || '';
     this.appSecret =
@@ -70,7 +70,7 @@ export class FacebookConnectService {
       this.configService.get<string>('FACEBOOK_CALLBACK_URL') || '';
     this.frontendSelectPageUrl = this.configService.get<string>(
       'FRONTEND_SELECT_PAGE_URL',
-      'http://localhost:3001/settings/connections/select-page'
+      'https://app.dinhviethoang604.id.vn/settings/connections/select-page'
     );
   }
 
