@@ -123,22 +123,22 @@ export class AuthService {
     });
   }
 
-  async logout(userId: string, refreshToken: string): Promise<boolean> {
-    if (refreshToken) {
-      const isValidToken = await this.userService.verifyRefreshToken(
-        refreshToken,
-        userId
-      );
-      if (isValidToken) {
-        await this.refreshTokenRepository.delete({
-          hashedToken: refreshToken,
-          userId,
-        });
-      }
-    } else {
-      throw new Error('Refresh token is required for logout.');
+  async logout(userId: string, rawRefreshToken: string): Promise<void> {
+    const userTokens = await this.refreshTokenRepository.find({
+      where: { userId },
+    });
+
+    if (!userTokens || userTokens.length === 0) {
+      return;
     }
-    return true;
+
+    for (const token of userTokens) {
+      const isMatch = await bcrypt.compare(rawRefreshToken, token.hashedToken);
+      if (isMatch) {
+        await this.refreshTokenRepository.delete(token.id);
+        break;
+      }
+    }
   }
 
   async logoutAll(userId: string): Promise<boolean> {
