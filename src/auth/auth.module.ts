@@ -47,6 +47,7 @@ import { EncryptionService } from 'src/common/services/encryption.service';
     JwtStrategy,
     RefreshTokenStrategy,
     EncryptionService,
+    ConfigService,
   ],
 })
 export class AuthModule {}

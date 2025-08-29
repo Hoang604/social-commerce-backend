@@ -14,7 +14,6 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { SocialAccount } from './entities/social-account.entity';
-import { EncryptionService } from '../common/services/encryption.service';
 
 @Injectable()
 export class AuthService {
@@ -27,9 +26,7 @@ export class AuthService {
     private readonly entityManager: EntityManager
   ) {}
 
-  async register(
-    registerDto: RegisterDto
-  ): Promise<Omit<User, 'passwordHash'>> {
+  async register(registerDto: RegisterDto): Promise<User> {
     return await this.entityManager.transaction(async (entityManager) => {
       const existingUser = await this.userService.findOneByEmail(
         registerDto.email

@@ -22,14 +22,64 @@ import { ConfigService } from '@nestjs/config';
 
 @Controller('api/v1/auth')
 export class AuthController {
+  private readonly refreshTokenExpiresIn: number;
+
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService
-  ) {}
+  ) {
+    const refreshTokenExpiresInString = this.configService.get<string>(
+      'JWT_REFRESH_EXPIRES_IN'
+    ) as string;
+
+    console.log('Original config value:', refreshTokenExpiresInString);
+    console.log(
+      'After slice(0, -1):',
+      refreshTokenExpiresInString.slice(0, -1)
+    );
+
+    this.refreshTokenExpiresIn = parseInt(
+      refreshTokenExpiresInString.slice(0, -1),
+      10
+    );
+
+    console.log('Final parsed value:', this.refreshTokenExpiresIn);
+  }
 
   @Post('register')
-  async register(@Body() registerDto: RegisterDto) {
-    return await this.authService.register(registerDto);
+  @HttpCode(HttpStatus.CREATED)
+  async register(
+    @Body() registerDto: RegisterDto,
+    @Request() req: { ip: string; headers: { 'user-agent': string } },
+    @Res({ passthrough: true }) response: Response
+  ) {
+    const newUser = await this.authService.register(registerDto);
+
+    const ipAddress = req.ip;
+    const userAgent = req.headers['user-agent'] || '';
+
+    const loginResult = await this.authService.login(
+      newUser,
+      false,
+      ipAddress,
+      userAgent
+    );
+
+    if ('refreshToken' in loginResult && loginResult.refreshToken) {
+      response.cookie('refresh_token', loginResult.refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+        expires: new Date(
+          Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
+        ),
+      });
+
+      const { refreshToken, ...responsePayload } = loginResult;
+      return responsePayload;
+    }
+
+    return loginResult;
   }
 
   /**
@@ -59,12 +109,13 @@ export class AuthController {
     );
 
     if ('refreshToken' in result && result.refreshToken) {
-      console.log('Setting refresh_token cookie for user:', req.user.id);
       response.cookie('refresh_token', result.refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        expires: new Date(
+          Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
+        ),
       });
       const { refreshToken, ...responsePayload } = result;
       return responsePayload;
@@ -95,7 +146,9 @@ export class AuthController {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      expires: new Date(
+        Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
+      ),
     });
 
     return { accessToken: tokens.accessToken };
@@ -158,7 +211,9 @@ export class AuthController {
         sameSite:
           this.configService.get('NODE_ENV') === 'production' ? 'none' : 'lax',
 
-        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        expires: new Date(
+          Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
+        ),
       });
 
       const frontendUrl = this.configService.get<string>(
