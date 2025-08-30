@@ -16,6 +16,7 @@ import { TwoFactorAuthenticationController } from './2fa/two-factor-authenticati
 import { FacebookStrategy } from './strategies/facebook.strategy';
 import { TwoFactorAuthenticationService } from './2fa/two-factor-authentication.service';
 import { EncryptionService } from 'src/common/services/encryption.service';
+import { TwoFactorAuthenticationStrategy } from './strategies/2fa-partial-token.strategy';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { EncryptionService } from 'src/common/services/encryption.service';
     TwoFactorAuthenticationService,
     LocalStrategy,
     JwtStrategy,
+    TwoFactorAuthenticationStrategy,
     RefreshTokenStrategy,
     EncryptionService,
     ConfigService,

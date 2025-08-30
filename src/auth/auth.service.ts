@@ -83,6 +83,7 @@ export class AuthService {
     userAgent?: string
   ) {
     if (user.isTwoFactorAuthenticationEnabled && !isTwoFactorAuthenticated) {
+      console.log('Two-factor authentication is enabled but not yet verified.');
       const payload = {
         sub: user.id,
         isTwoFactorAuthenticated: false,
@@ -130,6 +131,7 @@ export class AuthService {
     }
 
     for (const token of userTokens) {
+      console.log('Checking token:', token);
       const isMatch = await bcrypt.compare(rawRefreshToken, token.hashedToken);
       if (isMatch) {
         await this.refreshTokenRepository.delete(token.id);

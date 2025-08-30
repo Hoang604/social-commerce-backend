@@ -21,6 +21,8 @@ import { AuthService } from '../auth.service';
 import { EncryptionService } from '../../common/services/encryption.service';
 import * as bcrypt from 'bcrypt';
 import { ConfigService } from '@nestjs/config';
+import { AuthGuard } from '@nestjs/passport';
+import type { TwoFactorRequest } from '../../common/types/two-factor-request.interface';
 
 @Controller('api/v1/2fa')
 export class TwoFactorAuthenticationController {
@@ -89,13 +91,20 @@ export class TwoFactorAuthenticationController {
   }
 
   @Post('authenticate')
-  @UseGuards(JwtAuthGuard) // This guard will now handle the partial JWT
+  @UseGuards(AuthGuard('2fa-partial'))
   @HttpCode(HttpStatus.OK)
-  async authenticate(
-    @Req() req: AuthenticatedRequest,
-    @Body() body: TurnOn2faDto
-  ) {
-    const user = await this.userService.findOneById(req.user.id);
+  async authenticate(@Req() req: TwoFactorRequest, @Body() body: TurnOn2faDto) {
+    console.log('Request user:', req.user);
+    console.log('Using user ID:', req.user.sub);
+
+    const user = await this.userService.findOneById(req.user.sub);
+
+    if (!user) {
+      console.error('User not found for ID:', req.user.sub);
+      throw new UnauthorizedException('User not found');
+    }
+
+    console.log('Found user:', user);
 
     if (!user.isTwoFactorAuthenticationEnabled) {
       throw new ForbiddenException('2FA is not enabled for this account.');
