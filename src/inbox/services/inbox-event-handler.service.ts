@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { ParticipantService } from './participant.service';
 import { ConversationService } from './conversation.service';
 import { MessageService } from './message.service';
@@ -8,7 +8,6 @@ import { FacebookApiService } from '../../facebook-api/facebook-api.service';
 import { ConnectedPage } from '../../facebook-connect/entities/connected-page.entity';
 import { EncryptionService } from '../../common/services/encryption.service';
 import { Comment, CommentStatus } from '../entities/comment.entity';
-import { InjectRepository } from '@nestjs/typeorm';
 import { EventsGateway } from 'src/gateway/events.gateway';
 
 // --- Type Definitions for Webhook Payload ---
@@ -56,8 +55,6 @@ export class InboxEventHandlerService {
     private readonly encryptionService: EncryptionService,
     private readonly entityManager: EntityManager,
     private readonly eventsGateway: EventsGateway,
-    @InjectRepository(Comment)
-    private readonly commentRepository: Repository<Comment>
   ) {}
 
   @OnEvent('facebook.event.received')
@@ -93,7 +90,7 @@ export class InboxEventHandlerService {
 
       if (existingComment) {
         this.logger.debug(
-          `Comment ${value.comment_id} already exists. Skipping.`
+          `Comment ${value.comment_id} already exists. Skipping.`,
         );
         return;
       }
@@ -104,14 +101,14 @@ export class InboxEventHandlerService {
 
       if (!connectedPage) {
         this.logger.warn(
-          `Received webhook for unconnected page ${pageId}. Skipping.`
+          `Received webhook for unconnected page ${pageId}. Skipping.`,
         );
         return;
       }
 
       const participant = await this.participantService.upsert(
         { facebookUserId: value.from.id, name: value.from.name },
-        tm
+        tm,
       );
 
       let parentDbComment: Comment | null = null;
@@ -138,7 +135,7 @@ export class InboxEventHandlerService {
       this.eventsGateway.sendToUser(
         connectedPage.userId,
         'comment:new',
-        newComment
+        newComment,
       );
 
       this.logger.log(`Successfully processed new comment ${newComment.id}`);
@@ -147,24 +144,23 @@ export class InboxEventHandlerService {
 
   private async handleNewMessageEvent(messaging: any): Promise<void> {
     await this.entityManager.transaction(async (transactionManager) => {
-      const pageRepo = transactionManager.getRepository(ConnectedPage);
-      const connectedPage = await pageRepo.findOneBy({
+      const connectedPage = await transactionManager.findOneBy(ConnectedPage, {
         facebookPageId: messaging.recipient.id,
       });
 
       if (!connectedPage) {
         this.logger.warn(
-          `Received message for an unconnected page: ${messaging.recipient.id}`
+          `Received message for an unconnected page: ${messaging.recipient.id}`,
         );
         return;
       }
 
       const pageAccessToken = this.encryptionService.decrypt(
-        connectedPage.encryptedPageAccessToken
+        connectedPage.encryptedPageAccessToken,
       );
       const userProfile = await this.facebookApiService.getUserProfile(
         messaging.sender.id,
-        pageAccessToken
+        pageAccessToken,
       );
 
       const participantData = {
@@ -175,7 +171,7 @@ export class InboxEventHandlerService {
 
       const participant = await this.participantService.upsert(
         participantData,
-        transactionManager
+        transactionManager,
       );
 
       const conversation =
@@ -183,7 +179,7 @@ export class InboxEventHandlerService {
           messaging.recipient.id,
           participant.id,
           messaging.conversation?.id, // Truyền conversation ID từ Facebook nếu có
-          transactionManager
+          transactionManager,
         );
 
       const message = await this.messageService.create(
@@ -197,19 +193,20 @@ export class InboxEventHandlerService {
           fromCustomer: true,
           createdAtFacebook: new Date(messaging.timestamp),
         },
-        transactionManager
+        transactionManager,
       );
 
       await this.conversationService.updateMetadata(
         conversation.id,
         message,
         1,
-        transactionManager
+        transactionManager,
       );
 
       this.logger.log(
-        `Successfully processed message ${message.facebookMessageId} for conversation ${conversation.id}`
+        `Successfully processed message ${message.facebookMessageId} for conversation ${conversation.id}`,
       );
     });
   }
 }
+

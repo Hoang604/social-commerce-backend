@@ -19,6 +19,8 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { RawBodyMiddleware } from './common/middleware/raw-body.middleware';
 import { FacebookApiModule } from './facebook-api/facebook-api.module';
 import { CommonModule } from './common/common.module';
+import { CacheModule } from '@nestjs/cache-manager';
+import { redisStore } from 'cache-manager-redis-store';
 
 @Module({
   imports: [
@@ -26,6 +28,13 @@ import { CommonModule } from './common/common.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    CacheModule.register({
+      isGlobal: true,
+      store: redisStore,
+      host: 'localhost',
+      port: 6379,
+    }),
+
     EventEmitterModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],

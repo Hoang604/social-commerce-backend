@@ -1,6 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { Message, MessageStatus } from '../entities/message.entity';
 import { FacebookApiService } from '../../facebook-api/facebook-api.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -25,8 +24,7 @@ export class MessageService {
   private readonly logger = new Logger(MessageService.name);
 
   constructor(
-    @InjectRepository(Message)
-    private readonly messageRepository: Repository<Message>,
+    
     private readonly facebookApiService: FacebookApiService,
     private readonly encryptionService: EncryptionService,
     private readonly eventEmitter: EventEmitter2,
@@ -35,28 +33,25 @@ export class MessageService {
 
   async create(
     data: CreateMessageData,
-    manager: EntityManager
+    manager: EntityManager,
   ): Promise<Message> {
-    const repo = manager.getRepository(Message);
-    const message = repo.create(data);
-    return repo.save(message);
+    const message = manager.create(Message, data);
+    return manager.save(message);
   }
 
   async sendReply(
     userId: string,
     conversationId: number,
-    text: string
+    text: string,
   ): Promise<Message> {
-    const conversation = await this.entityManager
-      .getRepository(Conversation)
-      .findOne({
-        where: { id: conversationId },
-        relations: ['connectedPage', 'participant'],
-      });
+    const conversation = await this.entityManager.findOne(Conversation, {
+      where: { id: conversationId },
+      relations: ['connectedPage', 'participant'],
+    });
 
     if (!conversation || conversation.connectedPage.userId !== userId) {
       throw new NotFoundException(
-        `Conversation with ID ${conversationId} not found for this user.`
+        `Conversation with ID ${conversationId} not found for this user.`,
       );
     }
 
@@ -71,7 +66,7 @@ export class MessageService {
       fromCustomer: false,
       status: MessageStatus.SENDING,
     };
-    const message = await this.messageRepository.save(messageData);
+    const message = await this.entityManager.save(Message, messageData);
 
     // 2. Phát sự kiện để cập nhật UI ngay lập tức
     this.eventEmitter.emit('message.sending', message);
@@ -80,20 +75,20 @@ export class MessageService {
     try {
       // 3. Gửi tin nhắn qua Facebook API
       const pageAccessToken = this.encryptionService.decrypt(
-        connectedPage.encryptedPageAccessToken
+        connectedPage.encryptedPageAccessToken,
       );
       const fbResponse = await this.facebookApiService.sendMessage(
         pageAccessToken,
         participant.facebookUserId,
-        text
+        text,
       );
 
       // 4a. Cập nhật trạng thái thành 'sent' nếu thành công
       message.status = MessageStatus.SENT;
       message.facebookMessageId = fbResponse.message_id; // Lưu ID từ Facebook
-      await this.messageRepository.save(message);
+      await this.entityManager.save(message);
       this.logger.log(
-        `Message ${message.id} sent successfully, status updated to 'sent'.`
+        `Message ${message.id} sent successfully, status updated to 'sent'.`,
       );
 
       // 5a. Phát sự kiện cập nhật trạng thái
@@ -102,7 +97,7 @@ export class MessageService {
       this.logger.error(`Failed to send message ${message.id}`, error.stack);
       // 4b. Cập nhật trạng thái thành 'failed' nếu thất bại
       message.status = MessageStatus.FAILED;
-      await this.messageRepository.save(message);
+      await this.entityManager.save(message);
 
       // 5b. Phát sự kiện cập nhật trạng thái
       this.eventEmitter.emit('message.status.updated', message);
@@ -120,26 +115,24 @@ export class MessageService {
   async listByConversation(
     userId: string,
     conversationId: number,
-    query: ListMessagesDto
+    query: ListMessagesDto,
   ) {
     const { limit = 30, cursor } = query;
 
     // First, verify the user has access to this conversation.
-    const conversation = await this.entityManager
-      .getRepository(Conversation)
-      .findOne({
-        where: { id: conversationId },
-        relations: ['connectedPage'],
-      });
+    const conversation = await this.entityManager.findOne(Conversation, {
+      where: { id: conversationId },
+      relations: ['connectedPage'],
+    });
 
     if (!conversation || conversation.connectedPage.userId !== userId) {
       throw new NotFoundException(
-        `Conversation with ID ${conversationId} not found for this user.`
+        `Conversation with ID ${conversationId} not found for this user.`,
       );
     }
 
-    const qb = this.messageRepository
-      .createQueryBuilder('message')
+    const qb = this.entityManager
+      .createQueryBuilder(Message, 'message')
       .leftJoinAndSelect('message.conversation', 'conversation')
       .where('message.conversationId = :conversationId', { conversationId })
       .orderBy('message.createdAtFacebook', 'DESC')
@@ -154,7 +147,7 @@ export class MessageService {
         // Add condition to fetch messages older than the cursor
         qb.andWhere(
           '(message.createdAtFacebook < :cursorDate OR (message.createdAtFacebook = :cursorDate AND message.id < :id))',
-          { cursorDate, id: parseInt(id, 10) }
+          { cursorDate, id: parseInt(id, 10) },
         );
       } catch (error) {
         this.logger.error('Invalid cursor format', error);

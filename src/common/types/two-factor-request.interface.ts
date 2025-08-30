@@ -7,4 +7,5 @@ export interface TwoFactorRequest extends Request {
     exp: number;
     partialToken: string;
   };
+  ip: string;
 }

@@ -93,9 +93,16 @@ export class TwoFactorAuthenticationController {
   @Post('authenticate')
   @UseGuards(AuthGuard('2fa-partial'))
   @HttpCode(HttpStatus.OK)
-  async authenticate(@Req() req: TwoFactorRequest, @Body() body: TurnOn2faDto) {
+  async authenticate(
+    @Req() req: TwoFactorRequest,
+    @Body() body: TurnOn2faDto,
+    @Res() res
+  ) {
     console.log('Request user:', req.user);
     console.log('Using user ID:', req.user.sub);
+
+    const ipAddress = req.ip;
+    const userAgent = req.headers['user-agent'] || 'unknown';
 
     const user = await this.userService.findOneById(req.user.sub);
 
@@ -122,12 +129,38 @@ export class TwoFactorAuthenticationController {
       throw new UnauthorizedException('Wrong authentication code');
     }
 
-    // At this point, the user is fully authenticated. Generate full tokens.
-    // The login method needs to be slightly adapted to handle this case.
-    const tokens = await this.authService.login(user, true);
+    const data = await this.authService.loginAndReturnTokens(
+      user,
+      ipAddress,
+      userAgent
+    );
+    const { accessToken, refreshToken, user: userResult } = data;
+
+    const refreshTokenExpiresIn = this.configService.get<string>(
+      'JWT_REFRESH_EXPIRES_IN'
+    ) as string;
+    const refreshTokenExpiryDays = parseInt(
+      refreshTokenExpiresIn.slice(0, -1),
+      10
+    );
+    // Set the refresh token in an HttpOnly cookie
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      expires: new Date(
+        Date.now() + refreshTokenExpiryDays * 24 * 60 * 60 * 1000
+      ),
+    });
+
+    // Clear the temporary cookies
+    res.clearCookie('2fa_partial_token');
+    res.clearCookie('2fa_secret');
+
+    console.log('User fully authenticated with 2FA:', userResult.email);
 
     // Return full tokens, setting the refresh token in the cookie
-    return tokens;
+    res.json({ accessToken, user: userResult });
   }
 
   @Post('turn-off')
@@ -135,16 +168,25 @@ export class TwoFactorAuthenticationController {
   @HttpCode(HttpStatus.OK)
   async turnOff(
     @Req() req: AuthenticatedRequest,
-    @Body(new ValidationPipe()) body: { password: string }
+    @Body() body: TurnOn2faDto // Reuse the DTO that has the 'code' field
   ) {
     const user = await this.userService.findOneById(req.user.id);
-    const isPasswordMatching = await bcrypt.compare(
-      body.password,
-      user.passwordHash as string
+
+    if (!user.isTwoFactorAuthenticationEnabled) {
+      throw new ForbiddenException('2FA is not enabled for this account.');
+    }
+
+    const decryptedSecret = this.encryptionService.decrypt(
+      user.twoFactorAuthenticationSecret as string
     );
 
-    if (!isPasswordMatching) {
-      throw new UnauthorizedException('Incorrect password');
+    const isCodeValid = this.twoFactorAuthService.isCodeValid(
+      body.code,
+      decryptedSecret
+    );
+
+    if (!isCodeValid) {
+      throw new UnauthorizedException('Wrong authentication code');
     }
 
     await this.userService.turnOffTwoFactorAuthentication(req.user.id);

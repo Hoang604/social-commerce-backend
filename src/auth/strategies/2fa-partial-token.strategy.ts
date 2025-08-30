@@ -1,7 +1,7 @@
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { Request } from 'express';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -12,9 +12,13 @@ export class TwoFactorAuthenticationStrategy extends PassportStrategy(
   private readonly logger = new Logger(TwoFactorAuthenticationStrategy.name);
 
   constructor(configService: ConfigService) {
-    const refreshSecret = configService.get<string>('JWT_SECRET');
-    if (!refreshSecret) {
-      throw new Error('JWT_SECRET is not defined in environment variables');
+    const twoFactorAuthenticationSecret = configService.get<string>(
+      'TWO_FACTOR_AUTH_JWT_SECRET'
+    );
+    if (!twoFactorAuthenticationSecret) {
+      throw new Error(
+        'TWO_FACTOR_AUTH_JWT_SECRET is not defined in environment variables'
+      );
     }
 
     super({
@@ -31,7 +35,8 @@ export class TwoFactorAuthenticationStrategy extends PassportStrategy(
           return data;
         },
       ]),
-      secretOrKey: refreshSecret,
+      ignoreExpiration: false,
+      secretOrKey: twoFactorAuthenticationSecret,
       // pass request obj to the validate method
       passReqToCallback: true,
     });
@@ -46,17 +51,17 @@ export class TwoFactorAuthenticationStrategy extends PassportStrategy(
     // Kiểm tra các điều kiện cần thiết
     if (!payload.sub) {
       this.logger.error('No user ID in payload');
-      return false; // ← Reject request
+      throw new UnauthorizedException('Xác thực thất bại');
     }
 
     if (!payload.is2FA) {
       this.logger.error('Not a 2FA token');
-      return false; // ← Reject request
+      throw new UnauthorizedException('Xác thực thất bại');
     }
 
     if (payload.isTwoFactorAuthenticated === true) {
       this.logger.error('2FA already completed');
-      return false; // ← Reject request
+      throw new UnauthorizedException('Xác thực thất bại');
     }
 
     this.logger.log(

@@ -254,14 +254,11 @@ export class UserService {
     secret: string
   ): Promise<{ user: User; recoveryCodes: string[] }> {
     return this.entityManager.transaction(async (manager) => {
-      const userRepo = manager.getRepository(User);
-      const recoveryCodeRepo = manager.getRepository(TwoFactorRecoveryCode);
-
       // 1. Encrypt the secret for storage
       const encryptedSecret = this.encryptionService.encrypt(secret);
 
       // 2. Update the user record
-      await userRepo.update(userId, {
+      await manager.update(User, userId, {
         isTwoFactorAuthenticationEnabled: true,
         twoFactorAuthenticationSecret: encryptedSecret,
       });
@@ -280,10 +277,10 @@ export class UserService {
       );
 
       // 4. Clear old codes and save new ones
-      await recoveryCodeRepo.delete({ userId });
-      await recoveryCodeRepo.save(hashedCodes);
+      await manager.delete(TwoFactorRecoveryCode, { userId });
+      await manager.save(TwoFactorRecoveryCode, hashedCodes);
 
-      const updatedUser = await userRepo.findOneBy({ id: userId });
+      const updatedUser = await manager.findOneBy(User, { id: userId });
       if (!updatedUser) {
         throw new Error(`User with ID ${userId} not found`);
       }
@@ -299,19 +296,16 @@ export class UserService {
    */
   async turnOffTwoFactorAuthentication(userId: string): Promise<User> {
     return this.entityManager.transaction(async (manager) => {
-      const userRepo = manager.getRepository(User);
-      const recoveryCodeRepo = manager.getRepository(TwoFactorRecoveryCode);
-
       // 1. Clear 2FA data from the user record
-      await userRepo.update(userId, {
+      await manager.update(User, userId, {
         isTwoFactorAuthenticationEnabled: false,
         twoFactorAuthenticationSecret: null,
       });
 
       // 2. Delete all recovery codes for the user
-      await recoveryCodeRepo.delete({ userId });
+      await manager.delete(TwoFactorRecoveryCode, { userId });
 
-      const user = await userRepo.findOneBy({ id: userId });
+      const user = await manager.findOneBy(User, { id: userId });
       if (!user) {
         throw new Error(`User with ID ${userId} not found`);
       }

@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { FacebookParticipant } from '../entities/facebook-participant.entity';
-import { InjectRepository } from '@nestjs/typeorm';
 
 interface ParticipantData {
   facebookUserId: string;
@@ -11,17 +10,13 @@ interface ParticipantData {
 
 @Injectable()
 export class ParticipantService {
-  constructor(
-    @InjectRepository(FacebookParticipant)
-    private readonly participantRepository: Repository<FacebookParticipant>
-  ) {}
+  constructor() {}
 
   async upsert(
     participantData: ParticipantData,
-    manager: EntityManager
+    manager: EntityManager,
   ): Promise<FacebookParticipant> {
-    const repo = manager.getRepository(FacebookParticipant);
-    let participant = await repo.findOne({
+    let participant = await manager.findOne(FacebookParticipant, {
       where: { facebookUserId: participantData.facebookUserId },
     });
 
@@ -32,12 +27,12 @@ export class ParticipantService {
       participant.profilePicUrl = participantData.profilePicUrl ?? null;
     } else {
       // Tạo mới nếu chưa tồn tại
-      participant = repo.create({
+      participant = manager.create(FacebookParticipant, {
         ...participantData,
         profilePicUrl: participantData.profilePicUrl ?? null,
       });
     }
 
-    return repo.save(participant);
+    return manager.save(participant);
   }
 }

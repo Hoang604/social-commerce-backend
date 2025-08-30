@@ -11,10 +11,7 @@ import { ConnectedPage } from '../../facebook-connect/entities/connected-page.en
 
 @Injectable()
 export class ConversationService {
-  constructor(
-    @InjectRepository(Conversation)
-    private readonly conversationRepository: Repository<Conversation>
-  ) {}
+  constructor(private readonly entityManager: EntityManager) {}
 
   async findOrCreateByFacebookIds(
     facebookPageId: string,
@@ -22,17 +19,16 @@ export class ConversationService {
     facebookConversationId: string, // Thêm tham số này
     manager: EntityManager
   ): Promise<Conversation> {
-    const conversationRepo = manager.getRepository(Conversation);
-    const pageRepo = manager.getRepository(ConnectedPage);
-
-    const connectedPage = await pageRepo.findOne({ where: { facebookPageId } });
+    const connectedPage = await manager.findOne(ConnectedPage, {
+      where: { facebookPageId },
+    });
     if (!connectedPage) {
       throw new NotFoundException(
         `Connected page with facebookPageId ${facebookPageId} not found.`
       );
     }
 
-    let conversation = await conversationRepo.findOne({
+    let conversation = await manager.findOne(Conversation, {
       where: {
         connectedPageId: connectedPage.id,
         participantId: participantId,
@@ -40,13 +36,13 @@ export class ConversationService {
     });
 
     if (!conversation) {
-      conversation = conversationRepo.create({
+      conversation = manager.create(Conversation, {
         connectedPageId: connectedPage.id,
         participantId: participantId,
         facebookConversationId:
           facebookConversationId || `${facebookPageId}_${participantId}`, // Tạo ID giả nếu chưa có
       });
-      await conversationRepo.save(conversation);
+      await manager.save(conversation);
     }
     return conversation;
   }
@@ -57,13 +53,14 @@ export class ConversationService {
     unreadIncrement: number,
     manager: EntityManager
   ): Promise<void> {
-    const repo = manager.getRepository(Conversation);
-    await repo.increment(
+    await manager.increment(
+      Conversation,
       { id: conversationId },
       'unreadCount',
       unreadIncrement
     );
-    await repo.update(
+    await manager.update(
+      Conversation,
       { id: conversationId },
       {
         lastMessageSnippet: lastMessage.content?.substring(0, 100),
@@ -76,8 +73,8 @@ export class ConversationService {
   async listByPage(userId: string, query: ListConversationsDto) {
     const { connectedPageId, status, page = 1, limit = 10 } = query;
 
-    const qb = this.conversationRepository
-      .createQueryBuilder('conversation')
+    const qb = this.entityManager
+      .createQueryBuilder(Conversation, 'conversation')
       .leftJoin('conversation.connectedPage', 'connectedPage')
       .leftJoinAndSelect('conversation.participant', 'participant')
       .where('connectedPage.userId = :userId', { userId })
@@ -99,7 +96,7 @@ export class ConversationService {
     conversationId: number,
     status: ConversationStatus
   ): Promise<Conversation> {
-    const conversation = await this.conversationRepository.findOneBy({
+    const conversation = await this.entityManager.findOneBy(Conversation, {
       id: conversationId,
     });
     if (!conversation) {
@@ -108,11 +105,11 @@ export class ConversationService {
       );
     }
     conversation.status = status;
-    return this.conversationRepository.save(conversation);
+    return this.entityManager.save(conversation);
   }
 
   async markAsRead(conversationId: number): Promise<Conversation> {
-    const conversation = await this.conversationRepository.findOneBy({
+    const conversation = await this.entityManager.findOneBy(Conversation, {
       id: conversationId,
     });
     if (!conversation) {
@@ -121,6 +118,6 @@ export class ConversationService {
       );
     }
     conversation.unreadCount = 0;
-    return this.conversationRepository.save(conversation);
+    return this.entityManager.save(conversation);
   }
 }

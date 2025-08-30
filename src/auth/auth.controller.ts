@@ -19,6 +19,9 @@ import type { Response } from 'express';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
+import { type ExchangeCodeDto } from './dto/exchange-code.dto';
+import { access } from 'fs';
+import { PassThrough } from 'stream';
 
 @Controller('api/v1/auth')
 export class AuthController {
@@ -31,19 +34,10 @@ export class AuthController {
     const refreshTokenExpiresInString = this.configService.get<string>(
       'JWT_REFRESH_EXPIRES_IN'
     ) as string;
-
-    console.log('Original config value:', refreshTokenExpiresInString);
-    console.log(
-      'After slice(0, -1):',
-      refreshTokenExpiresInString.slice(0, -1)
-    );
-
     this.refreshTokenExpiresIn = parseInt(
       refreshTokenExpiresInString.slice(0, -1),
       10
     );
-
-    console.log('Final parsed value:', this.refreshTokenExpiresIn);
   }
 
   @Post('register')
@@ -51,35 +45,30 @@ export class AuthController {
   async register(
     @Body() registerDto: RegisterDto,
     @Request() req: { ip: string; headers: { 'user-agent': string } },
-    @Res({ passthrough: true }) response: Response
+    @Res() response: Response
   ) {
     const newUser = await this.authService.register(registerDto);
 
     const ipAddress = req.ip;
     const userAgent = req.headers['user-agent'] || '';
 
-    const loginResult = await this.authService.login(
-      newUser,
-      false,
-      ipAddress,
-      userAgent
-    );
+    const { refreshToken, ...responsePayload } =
+      await this.authService.loginAndReturnTokens(
+        newUser,
+        ipAddress,
+        userAgent
+      );
 
-    if ('refreshToken' in loginResult && loginResult.refreshToken) {
-      response.cookie('refresh_token', loginResult.refreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-        expires: new Date(
-          Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
-        ),
-      });
+    response.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      expires: new Date(
+        Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
+      ),
+    });
 
-      const { refreshToken, ...responsePayload } = loginResult;
-      return responsePayload;
-    }
-
-    return loginResult;
+    response.json(responsePayload);
   }
 
   /**
@@ -100,16 +89,13 @@ export class AuthController {
   ) {
     const ipAddress = req.ip;
     const userAgent = req.headers['user-agent'] || '';
+    const user = req.user as User;
 
-    const result = await this.authService.login(
-      req.user,
-      false,
-      ipAddress,
-      userAgent
-    );
+    if (!user.isTwoFactorAuthenticationEnabled) {
+      const { refreshToken, ...responsePayload } =
+        await this.authService.loginAndReturnTokens(user, ipAddress, userAgent);
 
-    if ('refreshToken' in result && result.refreshToken) {
-      response.cookie('refresh_token', result.refreshToken, {
+      response.cookie('refresh_token', refreshToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
         sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
@@ -117,10 +103,25 @@ export class AuthController {
           Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
         ),
       });
-      const { refreshToken, ...responsePayload } = result;
-      return responsePayload;
+      response.json(responsePayload);
+    } else {
+      const { accessToken } = await this.authService.generate2FAPartialToken(
+        user.id
+      );
+      console.log('Generated 2FA partial token:', accessToken);
+      response.cookie('2fa_partial_token', accessToken, {
+        httpOnly: true,
+        secure: this.configService.get('NODE_ENV') === 'production',
+        sameSite:
+          this.configService.get('NODE_ENV') === 'production' ? 'none' : 'lax',
+        expires: new Date(Date.now() + 5 * 60 * 1000),
+      });
+
+      throw new UnauthorizedException({
+        message: '2FA required',
+        errorCode: '2FA_REQUIRED',
+      });
     }
-    return result;
   }
 
   /**
@@ -163,6 +164,8 @@ export class AuthController {
       await this.authService.logout(req.user.id, refreshToken);
     }
     response.clearCookie('refresh_token');
+    response.clearCookie('2fa_secret');
+    response.clearCookie('2fa_partial_token');
     return { message: 'Đăng xuất thành công.' };
   }
 
@@ -175,6 +178,8 @@ export class AuthController {
   ) {
     await this.authService.logoutAll(req.user.id);
     response.clearCookie('refresh_token');
+    response.clearCookie('2fa_secret'); // ← Thêm dòng này
+    response.clearCookie('2fa_partial_token'); // ← Thêm dòng này
     return { message: 'Đã đăng xuất khỏi tất cả các thiết bị.' };
   }
 
@@ -184,62 +189,81 @@ export class AuthController {
     return HttpStatus.OK;
   }
 
+  /**
+   * Callback for Facebook login
+   * @param req the request object containing user information
+   * @param response the response object to set cookies or redirect
+   * @returns Promise<void>
+   * Handles both 2FA and non-2FA login flows
+   * If 2FA is enabled, sets a short-lived 2fa_partial_token cookie and redirects to FRONTEND_2FA_URL
+   * If 2FA is not enabled, generates a one-time code and redirects to FRONTEND_AUTH_CALLBACK_URL with the code as a query parameter
+   */
+
   @Get('facebook/callback')
   @UseGuards(AuthGuard('facebook'))
-  async facebookLoginCallback(@Request() req, @Res() response: Response) {
+  async facebookLoginCallback(
+    @Request() req,
+    @Res({ passthrough: true }) response: Response
+  ) {
     const user = req.user as User;
     if (!user) {
       throw new UnauthorizedException('Could not authenticate with Facebook.');
     }
 
-    const ipAddress = req.ip;
-    const userAgent = req.headers['user-agent'] || '';
-
-    const tokens = await this.authService.login(
-      user,
-      false,
-      ipAddress,
-      userAgent
-    );
-
-    if ('refreshToken' in tokens) {
-      // CASE 1: Full login successful (user does NOT have 2FA enabled)
-      response.cookie('refresh_token', tokens.refreshToken, {
-        httpOnly: true,
-        secure: this.configService.get('NODE_ENV') === 'production',
-        // highlight-start
-        sameSite:
-          this.configService.get('NODE_ENV') === 'production' ? 'none' : 'lax',
-
-        expires: new Date(
-          Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
-        ),
-      });
-
-      const frontendUrl = this.configService.get<string>(
-        'FRONTEND_DASHBOARD_URL'
+    if (user.isTwoFactorAuthenticationEnabled) {
+      const { accessToken } = await this.authService.generate2FAPartialToken(
+        user.id
       );
-      if (!frontendUrl) {
-        throw new Error('FRONTEND_DASHBOARD_URL is not defined');
-      }
-      response.redirect(frontendUrl);
-    } else {
-      // CASE 2: Partial login (user has 2FA enabled)
-      response.cookie('2fa_partial_token', tokens.accessToken, {
+      console.log('Generated 2FA partial token:', accessToken);
+      response.cookie('2fa_partial_token', accessToken, {
         httpOnly: true,
         secure: this.configService.get('NODE_ENV') === 'production',
-        // highlight-start
         sameSite:
           this.configService.get('NODE_ENV') === 'production' ? 'none' : 'lax',
-        // highlight-end
         expires: new Date(Date.now() + 5 * 60 * 1000),
       });
-
       const twoFactorUrl = this.configService.get<string>('FRONTEND_2FA_URL');
       if (!twoFactorUrl) {
         throw new Error('FRONTEND_2FA_URL is not defined');
       }
       response.redirect(twoFactorUrl);
+    } else {
+      const code = await this.authService.generateOneTimeCode(user.id);
+      const frontendCallbackUrl = this.configService.get<string>(
+        'FRONTEND_AUTH_CALLBACK_URL'
+      );
+      if (!frontendCallbackUrl) {
+        throw new Error('FRONTEND_AUTH_CALLBACK_URL is not defined');
+      }
+
+      const redirectUrl = `${frontendCallbackUrl}?code=${code}`;
+      response.redirect(redirectUrl);
     }
+  }
+
+  @Post('exchange-code')
+  @HttpCode(HttpStatus.OK)
+  async exchangeCode(
+    @Body() exchangeCodeDto: ExchangeCodeDto,
+    @Res({ passthrough: true }) response: Response,
+    @Request() req: { ip: string; headers: { 'user-agent': string } }
+  ) {
+    const { refreshToken, accessToken, user } =
+      await this.authService.exchangeCodeForTokens(
+        exchangeCodeDto.code,
+        req.ip,
+        req.headers['user-agent']
+      );
+
+    response.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      expires: new Date(
+        Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
+      ),
+    });
+
+    response.json({ accessToken, user });
   }
 }

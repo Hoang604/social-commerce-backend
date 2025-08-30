@@ -3,17 +3,21 @@ import {
   ConflictException,
   ForbiddenException,
   UnauthorizedException,
+  Inject,
+  ConsoleLogger,
 } from '@nestjs/common';
 import { UserService } from '../user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { RegisterDto } from './dto/register.dto';
 import { User, UserStatus } from '../user/entities/user.entity';
 import { ConfigService } from '@nestjs/config';
 import { RefreshToken } from './entities/refresh-token.entity';
-import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { SocialAccount } from './entities/social-account.entity';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { type Cache } from 'cache-manager';
 
 @Injectable()
 export class AuthService {
@@ -21,9 +25,8 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    @InjectRepository(RefreshToken)
-    private readonly refreshTokenRepository: Repository<RefreshToken>,
-    private readonly entityManager: EntityManager
+    private readonly entityManager: EntityManager,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache
   ) {}
 
   async register(registerDto: RegisterDto): Promise<User> {
@@ -74,55 +77,56 @@ export class AuthService {
    * @param user the user entity
    * @param ipAddress the IP address of the user (optional)
    * @param userAgent the user agent string of the user's device (optional)
-   * @returns Promise<{ accessToken: string, refreshToken: string }> the generated tokens
+   * @returns Promise<{ accessToken: string, refreshToken: string, user: User }> the generated tokens and user info
    */
-  async login(
+  async loginAndReturnTokens(
     user: User,
-    isTwoFactorAuthenticated = false,
     ipAddress?: string,
     userAgent?: string
   ) {
-    if (user.isTwoFactorAuthenticationEnabled && !isTwoFactorAuthenticated) {
-      console.log('Two-factor authentication is enabled but not yet verified.');
-      const payload = {
-        sub: user.id,
-        isTwoFactorAuthenticated: false,
-        is2FA: true, // A flag to identify this as a 2FA-required token
-      };
-      const accessToken = await this.jwtService.signAsync(payload, {
-        expiresIn: '5m',
-      });
-      return { accessToken }; // Only return the partial access token
-    }
+    const tokens = await this._generateTokens(user.id, user.email);
 
-    // Normal login flow
-    return this.entityManager.transaction(async (entityManager) => {
-      const userService = this.userService;
+    const liveTime =
+      this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '30d';
+    const refreshTokenExpiresIn = parseInt(liveTime.slice(0, -1), 10);
 
-      const tokens = await this._generateTokens(user.id, user.email);
+    // Calculate expiration date (30 days from now)
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + refreshTokenExpiresIn);
 
-      // Calculate expiration date (7 days from now)
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      // Use UserService method to set refresh token
-      await userService.setCurrentRefreshToken({
-        refreshToken: tokens.refreshToken,
-        userId: user.id,
-        expiresAt,
-        ipAddress,
-        userAgent,
-      });
-
-      await userService.updateLastLogin(user.id);
-      const { passwordHash, ...userResult } = user;
-
-      return { ...tokens, user: userResult };
+    // Use UserService method to set refresh token
+    await this.userService.setCurrentRefreshToken({
+      refreshToken: tokens.refreshToken,
+      userId: user.id,
+      expiresAt,
+      ipAddress,
+      userAgent,
     });
+
+    await this.userService.updateLastLogin(user.id);
+    const { passwordHash, ...userResult } = user;
+
+    return { ...tokens, user: userResult };
+  }
+
+  async generate2FAPartialToken(userId: string) {
+    const payload = {
+      sub: userId,
+      isTwoFactorAuthenticated: false,
+      is2FA: true, // A flag to identify this as a 2FA-required token
+    };
+
+    const accessToken = await this.jwtService.signAsync(payload, {
+      secret: this.configService.get<string>('TWO_FACTOR_AUTH_JWT_SECRET'),
+      expiresIn: this.configService.get<string>(
+        'TWO_FACTOR_AUTH_JWT_EXPIRES_IN'
+      ),
+    });
+    return { accessToken };
   }
 
   async logout(userId: string, rawRefreshToken: string): Promise<void> {
-    const userTokens = await this.refreshTokenRepository.find({
+    const userTokens = await this.entityManager.find(RefreshToken, {
       where: { userId },
     });
 
@@ -134,7 +138,7 @@ export class AuthService {
       console.log('Checking token:', token);
       const isMatch = await bcrypt.compare(rawRefreshToken, token.hashedToken);
       if (isMatch) {
-        await this.refreshTokenRepository.delete(token.id);
+        await this.entityManager.delete(RefreshToken, token.id);
         break;
       }
     }
@@ -147,7 +151,7 @@ export class AuthService {
   }
 
   /**
-   * Refresh access tokens of user determined by userId, using a valid refresh token.\
+   * Refresh access tokens of user determined by userId, using a valid refresh token.
    * remove old refresh token and add a new one to the database.
    *
    * @param userId the unique identifier of the user
@@ -220,10 +224,7 @@ export class AuthService {
 
   async validateSocialLogin(profile: any): Promise<User> {
     return this.entityManager.transaction(async (manager) => {
-      const socialAccountRepo = manager.getRepository(SocialAccount);
-      const userRepo = manager.getRepository(User);
-
-      let socialAccount = await socialAccountRepo.findOne({
+      const socialAccount = await manager.findOne(SocialAccount, {
         where: {
           provider: profile.provider,
           providerUserId: profile.providerId,
@@ -237,7 +238,9 @@ export class AuthService {
       }
 
       // If social account not found, check if a user with this email already exists
-      let user = await userRepo.findOne({ where: { email: profile.email } });
+      let user = await manager.findOne(User, {
+        where: { email: profile.email },
+      });
 
       if (user) {
         // User with this email exists, but hasn't linked this social account yet.
@@ -248,7 +251,7 @@ export class AuthService {
         // For now, we will link it as per initial thought, can be refined.
       } else {
         // This is a new user
-        user = userRepo.create({
+        user = manager.create(User, {
           email: profile.email,
           fullName: profile.fullName,
           avatarUrl: profile.avatarUrl,
@@ -259,7 +262,7 @@ export class AuthService {
       }
 
       // Create and link the social account
-      const newSocialAccount = socialAccountRepo.create({
+      const newSocialAccount = manager.create(SocialAccount, {
         provider: profile.provider,
         providerUserId: profile.providerId,
         userId: user.id,
@@ -268,5 +271,40 @@ export class AuthService {
 
       return user;
     });
+  }
+
+  async generateOneTimeCode(userId: string): Promise<string> {
+    const code = crypto.randomBytes(32).toString('hex');
+    const key = `one-time-code:${code}`;
+    const fiveMinutesInMs = 5 * 60 * 1000;
+
+    // Lưu key-value vào Redis với thời gian hết hạn (TTL) là 5 phút
+    await this.cacheManager.set(key, userId, fiveMinutesInMs);
+
+    return code;
+  }
+
+  // [B] Sửa hàm exchangeCodeForTokens
+  async exchangeCodeForTokens(code: string, ip: string, userAgent: string) {
+    const key = `one-time-code:${code}`;
+
+    // 1. Lấy userId từ Redis bằng key
+    const userId = await this.cacheManager.get<string>(key);
+
+    // 2. Xác thực mã
+    if (!userId) {
+      throw new UnauthorizedException('Invalid or expired code.');
+    }
+    console.log('One-time code valid for userId:', userId);
+    // 3. Vô hiệu hóa mã ngay lập tức bằng cách xóa nó khỏi Redis
+    await this.cacheManager.del(key);
+
+    // 4. Lấy thông tin user và tạo tokens (logic này giữ nguyên)
+    const user = await this.userService.findOneById(userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found.');
+    }
+
+    return await this.loginAndReturnTokens(user, ip, userAgent);
   }
 }
