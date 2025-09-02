@@ -39,9 +39,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('User not found.');
     }
 
-    const tokenIssuedAt = new Date(payload.iat * 1000);
-
-    if (tokenIssuedAt < user.tokensValidFrom) {
+    const tokensValidFromSec = Math.floor(
+      user.tokensValidFrom.getTime() / 1000
+    );
+    if (payload.iat < tokensValidFromSec) {
       throw new UnauthorizedException('Token has been revoked.');
     }
 

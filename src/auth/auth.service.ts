@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   UnauthorizedException,
   Inject,
-  ConsoleLogger,
 } from '@nestjs/common';
 import { UserService } from '../user/user.service';
 import { JwtService } from '@nestjs/jwt';
@@ -71,6 +70,36 @@ export class AuthService {
     return null;
   }
 
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<void> {
+    return await this.entityManager.transaction(async (entityManager) => {
+      const user = await this.userService.findOneById(userId);
+      if (!user) {
+        throw new UnauthorizedException('Người dùng không tồn tại.');
+      }
+
+      const isPasswordValid = await bcrypt.compare(
+        currentPassword,
+        user.passwordHash as string
+      );
+      if (!isPasswordValid) {
+        throw new ForbiddenException({
+          message: 'Mật khẩu hiện tại không đúng.',
+          errorCode: 'WRONG_PASSWORD',
+        });
+      }
+
+      const newHashedPassword = await bcrypt.hash(newPassword, 12);
+      user.passwordHash = newHashedPassword;
+      await entityManager.save(user);
+
+      await this.logoutAll(userId);
+    });
+  }
+
   /**
    * Log in a user by generating access and refresh tokens.
    * The refresh token is stored in the database and the access token is returned to the client.
@@ -88,7 +117,7 @@ export class AuthService {
 
     const liveTime =
       this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '30d';
-    const refreshTokenExpiresIn = parseInt(liveTime.slice(0, -1), 10);
+    const refreshTokenExpiresIn = parseInt(liveTime.slice(0, -1), 30);
 
     // Calculate expiration date (30 days from now)
     const expiresAt = new Date();
@@ -130,6 +159,8 @@ export class AuthService {
       where: { userId },
     });
 
+    console.log('User tokens:', userTokens);
+
     if (!userTokens || userTokens.length === 0) {
       return;
     }
@@ -144,10 +175,9 @@ export class AuthService {
     }
   }
 
-  async logoutAll(userId: string): Promise<boolean> {
-    this.userService.removeAllRefreshTokensForUser(userId);
-    this.userService.invalidateAllTokens(userId);
-    return true;
+  async logoutAll(userId: string): Promise<void> {
+    await this.userService.removeAllRefreshTokensForUser(userId);
+    await this.userService.invalidateAllTokens(userId);
   }
 
   /**

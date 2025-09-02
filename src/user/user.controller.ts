@@ -7,11 +7,13 @@ import {
   ValidationPipe,
   UseGuards,
   Request,
+  Post,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UserService } from './user.service';
 import { User } from './entities/user.entity';
 import { UpdateUserDto } from './dto/update-user-dto';
+import { EmailChangeDto } from './dto/email-change.dto';
 
 @Controller('api/v1/user')
 @UseGuards(JwtAuthGuard)
@@ -48,5 +50,16 @@ export class UserController {
     const userId = req.user.id;
     await this.userService.deactivate(userId);
     return { message: 'Tài khoản của bạn đã được vô hiệu hóa thành công.' };
+  }
+
+  @Post('request-email-change')
+  async requestEmailChange(@Request() req, @Body() body: EmailChangeDto) {
+    const userId = req.user.id;
+    await this.userService.requestEmailChange(
+      userId,
+      body.newEmail,
+      body.password
+    );
+    return { message: 'Yêu cầu thay đổi email đã được gửi.' };
   }
 }

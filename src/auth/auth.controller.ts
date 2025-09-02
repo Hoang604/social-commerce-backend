@@ -15,13 +15,12 @@ import { RegisterDto } from './dto/register.dto';
 import { LocalAuthGuard } from './guards/local-auth.guard';
 import { User } from '../user/entities/user.entity';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import type { Response } from 'express';
+import { type Response } from 'express';
 import { RefreshTokenGuard } from './guards/refresh-token.guard';
 import { AuthGuard } from '@nestjs/passport';
 import { ConfigService } from '@nestjs/config';
 import { type ExchangeCodeDto } from './dto/exchange-code.dto';
-import { access } from 'fs';
-import { PassThrough } from 'stream';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 @Controller('api/v1/auth')
 export class AuthController {
@@ -156,12 +155,44 @@ export class AuthController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Post('change-password')
+  @HttpCode(HttpStatus.OK)
+  async changePassword(
+    @Request() req,
+    @Body() body: ChangePasswordDto,
+    @Res({ passthrough: true }) response: Response
+  ) {
+    await this.authService.changePassword(
+      req.user.id,
+      body.currentPassword,
+      body.newPassword
+    );
+    const tokens = await this.authService.loginAndReturnTokens(
+      req.user,
+      req.ip,
+      req.headers['user-agent'] || ''
+    );
+    response.cookie('refresh_token', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      expires: new Date(
+        Date.now() + this.refreshTokenExpiresIn * 24 * 60 * 60 * 1000
+      ),
+    });
+    return {
+      message: 'Mật khẩu đã được thay đổi thành công.',
+      accessToken: tokens.accessToken,
+    };
+  }
+
+  @UseGuards(RefreshTokenGuard)
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(@Request() req, @Res({ passthrough: true }) response: Response) {
     const refreshToken = req.cookies['refresh_token'];
     if (refreshToken) {
-      await this.authService.logout(req.user.id, refreshToken);
+      await this.authService.logout(req.user.sub, refreshToken);
     }
     response.clearCookie('refresh_token');
     response.clearCookie('2fa_secret');
@@ -169,14 +200,14 @@ export class AuthController {
     return { message: 'Đăng xuất thành công.' };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(RefreshTokenGuard)
   @Post('logout-all')
   @HttpCode(HttpStatus.OK)
   async logoutAll(
     @Request() req,
     @Res({ passthrough: true }) response: Response
   ) {
-    await this.authService.logoutAll(req.user.id);
+    await this.authService.logoutAll(req.user.sub);
     response.clearCookie('refresh_token');
     response.clearCookie('2fa_secret'); // ← Thêm dòng này
     response.clearCookie('2fa_partial_token'); // ← Thêm dòng này

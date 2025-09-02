@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 
 /**
@@ -9,4 +9,17 @@ import { AuthGuard } from '@nestjs/passport';
  * Nếu token không tồn tại hoặc không hợp lệ, nó sẽ tự động ném ra một UnauthorizedException (lỗi 401).
  */
 @Injectable()
-export class JwtAuthGuard extends AuthGuard('jwt') {}
+export class JwtAuthGuard extends AuthGuard('jwt') {
+  handleRequest(err, user, info) {
+    // Nếu có lỗi hoặc user không tồn tại, ném ra UnauthorizedException
+    if (err || !user) {
+      throw new UnauthorizedException({
+        message: info?.message || 'Unauthorized',
+        error: 'Unauthorized',
+        statusCode: 401,
+        errorCode: 'TOKEN_INVALID',
+      });
+    }
+    return user;
+  }
+}

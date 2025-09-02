@@ -67,6 +67,37 @@ export class UserService {
     return await this.userRepository.findOne({ where: { email } });
   }
 
+  async requestEmailChange(
+    userId: string,
+    newEmail: string,
+    currentPassword: string
+  ): Promise<void> {
+    const user = await this.findOneById(userId);
+
+    const isPasswordValid = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash as string
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Mật khẩu hiện tại không đúng.');
+    }
+
+    const IsEmailTaken = await this.userRepository.findOne({
+      where: { email: newEmail },
+    });
+    if (IsEmailTaken) {
+      throw new UnauthorizedException('Email này đã được sử dụng.');
+    }
+
+    // Here you would typically generate a verification token and send an email to the new address.
+    // For simplicity, we'll just update the email directly.
+
+    user.email = newEmail;
+    await this.entityManager.transaction(async (entityManager) => {
+      await entityManager.save(User, user);
+    });
+  }
   /**
    * Update a user's profile with the provided data.
    *
@@ -138,14 +169,28 @@ export class UserService {
 
     return this.entityManager.transaction(async (entityManager) => {
       const hashedToken = await bcrypt.hash(refreshToken, 12);
-
       let finalIpAddress = ipAddress;
       let finalUserAgent = userAgent;
 
       const user = await this.userRepository.findOne({ where: { id: userId } });
-
       if (!user) {
         throw new Error(`User with ID ${userId} not found`);
+      }
+
+      if (expiredRefreshToken) {
+        const oldToken = await this.findRefreshTokenByValue(
+          userId,
+          expiredRefreshToken,
+          entityManager
+        );
+
+        console.log('Old token found:', oldToken);
+
+        if (oldToken) {
+          finalIpAddress = ipAddress || oldToken.ipAddress;
+          finalUserAgent = userAgent || oldToken.userAgent;
+          await entityManager.remove(oldToken);
+        }
       }
 
       if (finalIpAddress && finalUserAgent) {
@@ -156,20 +201,6 @@ export class UserService {
         });
       }
 
-      if (expiredRefreshToken) {
-        const oldToken = await entityManager.findOne(RefreshToken, {
-          where: { userId, hashedToken: expiredRefreshToken },
-        });
-
-        if (oldToken) {
-          finalIpAddress = ipAddress || oldToken.ipAddress;
-          finalUserAgent = userAgent || oldToken.userAgent;
-
-          await entityManager.remove(oldToken);
-        }
-      }
-
-      // Create a new refresh token
       const newRefreshToken = entityManager.create(RefreshToken, {
         hashedToken,
         userId,
@@ -180,6 +211,25 @@ export class UserService {
 
       await entityManager.save(newRefreshToken);
     });
+  }
+
+  private async findRefreshTokenByValue(
+    userId: string,
+    refreshToken: string,
+    entityManager: EntityManager
+  ): Promise<RefreshToken | null> {
+    const userTokens = await entityManager.find(RefreshToken, {
+      where: { userId },
+    });
+
+    for (const token of userTokens) {
+      const isMatch = await bcrypt.compare(refreshToken, token.hashedToken);
+      if (isMatch) {
+        return token;
+      }
+    }
+
+    return null;
   }
 
   /**

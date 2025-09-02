@@ -12,4 +12,8 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   timezone?: string;
+
+  @IsOptional()
+  @IsString()
+  language?: string;
 }
