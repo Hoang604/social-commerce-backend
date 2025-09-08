@@ -1,12 +1,15 @@
+// src/worker.ts
+
 import { NestFactory } from '@nestjs/core';
-import { WebhookProcessorModule } from './webhook-processor/webhook-processor.module';
+// SỬA LỖI: Cập nhật đường dẫn và tên module
+import { EventConsumerModule } from './event-consumer/event-consumer.module';
 
 async function bootstrap() {
   const app = await NestFactory.createApplicationContext(
-    WebhookProcessorModule
+    EventConsumerModule // SỬA LỖI: Sử dụng module mới
   );
-  app.enableShutdownHooks(); // Important for graceful shutdown
-  console.log('Webhook processor worker started...');
+  app.enableShutdownHooks();
+  console.log('Event consumer worker started...');
 }
 
 bootstrap();

@@ -2,16 +2,12 @@ import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
-import { ConnectedPage } from '../facebook-connect/entities/connected-page.entity';
 import { Conversation } from '../inbox/entities/conversation.entity';
 import { Message } from '../inbox/entities/message.entity';
-import { Comment } from '../inbox/entities/comment.entity';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import * as dotenv from 'dotenv';
 import { ConfigService } from '@nestjs/config';
-import { FacebookParticipant } from '../inbox/entities/facebook-participant.entity';
 import { TwoFactorRecoveryCode } from 'src/auth/entities/two-factor-recovery-code.entity';
-import { SocialAccount } from 'src/auth/entities/social-account.entity';
 
 dotenv.config();
 
@@ -29,13 +25,10 @@ export const AppDataSource = new DataSource({
   entities: [
     User,
     RefreshToken,
-    ConnectedPage,
     Conversation,
     Message,
     Comment,
-    FacebookParticipant,
     TwoFactorRecoveryCode,
-    SocialAccount,
   ],
   migrations: ['src/database/migrations/*.ts'],
   namingStrategy: new SnakeNamingStrategy(),

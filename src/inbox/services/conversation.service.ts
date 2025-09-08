@@ -5,80 +5,97 @@ import {
   Conversation,
   ConversationStatus,
 } from '../entities/conversation.entity';
-import { Message } from '../entities/message.entity';
 import { ListConversationsDto } from '../dto/list-conversations.dto';
-import { ConnectedPage } from '../../facebook-connect/entities/connected-page.entity';
+import { User } from 'src/user/entities/user.entity';
 
 @Injectable()
 export class ConversationService {
-  constructor(private readonly entityManager: EntityManager) {}
+  constructor(
+    @InjectRepository(Conversation)
+    private readonly conversationRepository: Repository<Conversation>
+  ) {}
 
-  async findOrCreateByFacebookIds(
-    facebookPageId: string,
-    participantId: number,
-    facebookConversationId: string, // Thêm tham số này
+  /**
+   * Finds an existing conversation for a visitor or creates a new one.
+   * This is intended to be called from the EventConsumer within a transaction.
+   * @param projectId - The ID of the project.
+   * @param visitorId - The ID of the visitor.
+   * @param manager - The EntityManager from the transaction.
+   * @returns The found or newly created Conversation.
+   */
+  async findOrCreateByVisitorId(
+    projectId: number,
+    visitorId: number,
     manager: EntityManager
   ): Promise<Conversation> {
-    const connectedPage = await manager.findOne(ConnectedPage, {
-      where: { facebookPageId },
-    });
-    if (!connectedPage) {
-      throw new NotFoundException(
-        `Connected page with facebookPageId ${facebookPageId} not found.`
-      );
-    }
+    const conversationRepo = manager.getRepository(Conversation);
 
-    let conversation = await manager.findOne(Conversation, {
+    let conversation = await conversationRepo.findOne({
       where: {
-        connectedPageId: connectedPage.id,
-        participantId: participantId,
+        project: { id: projectId },
+        visitor: { id: visitorId },
       },
     });
 
     if (!conversation) {
-      conversation = manager.create(Conversation, {
-        connectedPageId: connectedPage.id,
-        participantId: participantId,
-        facebookConversationId:
-          facebookConversationId || `${facebookPageId}_${participantId}`, // Tạo ID giả nếu chưa có
+      conversation = conversationRepo.create({
+        project: { id: projectId },
+        visitor: { id: visitorId },
+        status: ConversationStatus.OPEN,
       });
-      await manager.save(conversation);
+      await conversationRepo.save(conversation);
     }
     return conversation;
   }
 
-  async updateMetadata(
+  /**
+   * Updates the conversation's metadata after a new message is received.
+   * Intended to be called from the EventConsumer within a transaction.
+   * @param conversationId - The ID of the conversation to update.
+   * @param lastMessageSnippet - A snippet of the last message.
+   * @param lastMessageTimestamp - The timestamp of the last message.
+   * @param manager - The EntityManager from the transaction.
+   */
+  async updateLastMessage(
     conversationId: number,
-    lastMessage: Message,
-    unreadIncrement: number,
+    lastMessageSnippet: string,
+    lastMessageTimestamp: Date,
     manager: EntityManager
   ): Promise<void> {
-    await manager.increment(
-      Conversation,
-      { id: conversationId },
-      'unreadCount',
-      unreadIncrement
-    );
-    await manager.update(
-      Conversation,
+    const conversationRepo = manager.getRepository(Conversation);
+    // Increment unread count by 1 for new incoming messages
+    await conversationRepo.increment({ id: conversationId }, 'unreadCount', 1);
+
+    await conversationRepo.update(
       { id: conversationId },
       {
-        lastMessageSnippet: lastMessage.content?.substring(0, 100),
-        lastMessageTimestamp: lastMessage.createdAtFacebook,
-        status: ConversationStatus.OPEN,
+        lastMessageSnippet: lastMessageSnippet.substring(0, 100),
+        lastMessageTimestamp,
+        status: ConversationStatus.OPEN, // Re-open conversation on new message
       }
     );
   }
 
-  async listByPage(userId: string, query: ListConversationsDto) {
-    const { connectedPageId, status, page = 1, limit = 10 } = query;
+  /**
+   * Lists conversations for a specific project, intended for the agent dashboard.
+   * @param user - The authenticated user making the request.
+   * @param projectId - The ID of the project to fetch conversations for.
+   * @param query - DTO for pagination and filtering.
+   * @returns A paginated list of conversations.
+   */
+  async listByProject(
+    user: User,
+    projectId: number,
+    query: ListConversationsDto
+  ) {
+    const { status, page = 1, limit = 10 } = query;
 
-    const qb = this.entityManager
-      .createQueryBuilder(Conversation, 'conversation')
-      .leftJoin('conversation.connectedPage', 'connectedPage')
-      .leftJoinAndSelect('conversation.participant', 'participant')
-      .where('connectedPage.userId = :userId', { userId })
-      .andWhere('connectedPage.id = :connectedPageId', { connectedPageId });
+    const qb = this.conversationRepository
+      .createQueryBuilder('conversation')
+      .leftJoin('conversation.project', 'project')
+      .leftJoinAndSelect('conversation.visitor', 'visitor')
+      .where('project.userId = :userId', { userId: user.id })
+      .andWhere('conversation.projectId = :projectId', { projectId });
 
     if (status) {
       qb.andWhere('conversation.status = :status', { status });
@@ -92,11 +109,18 @@ export class ConversationService {
     return { data, total, page, limit };
   }
 
+  /**
+   * Updates the status of a conversation (e.g., 'open', 'closed').
+   * @param conversationId - The ID of the conversation.
+   * @param status - The new status.
+   * @returns The updated conversation.
+   */
   async updateStatus(
     conversationId: number,
     status: ConversationStatus
   ): Promise<Conversation> {
-    const conversation = await this.entityManager.findOneBy(Conversation, {
+    // We should also add a check here to ensure the user has access to this conversation's project
+    const conversation = await this.conversationRepository.findOneBy({
       id: conversationId,
     });
     if (!conversation) {
@@ -105,11 +129,17 @@ export class ConversationService {
       );
     }
     conversation.status = status;
-    return this.entityManager.save(conversation);
+    return this.conversationRepository.save(conversation);
   }
 
+  /**
+   * Marks a conversation as read by resetting its unread count.
+   * @param conversationId - The ID of the conversation.
+   * @returns The updated conversation.
+   */
   async markAsRead(conversationId: number): Promise<Conversation> {
-    const conversation = await this.entityManager.findOneBy(Conversation, {
+    // Similar to updateStatus, an ownership check would be ideal here too
+    const conversation = await this.conversationRepository.findOneBy({
       id: conversationId,
     });
     if (!conversation) {
@@ -118,6 +148,6 @@ export class ConversationService {
       );
     }
     conversation.unreadCount = 0;
-    return this.entityManager.save(conversation);
+    return this.conversationRepository.save(conversation);
   }
 }

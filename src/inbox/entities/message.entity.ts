@@ -31,9 +31,6 @@ export class Message {
   @JoinColumn({ name: 'conversation_id' })
   conversation: Conversation;
 
-  @Column({ unique: true, name: 'facebook_message_id' })
-  facebookMessageId: string;
-
   @Column({ type: 'text', nullable: true })
   content: string | null;
 
@@ -56,9 +53,6 @@ export class Message {
     default: MessageStatus.SENT,
   })
   status: MessageStatus;
-
-  @Column({ type: 'timestamptz', name: 'created_at_facebook' })
-  createdAtFacebook: Date;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;

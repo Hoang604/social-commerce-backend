@@ -14,7 +14,6 @@ import { User, UserStatus } from '../user/entities/user.entity';
 import { ConfigService } from '@nestjs/config';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { EntityManager } from 'typeorm';
-import { SocialAccount } from './entities/social-account.entity';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { type Cache } from 'cache-manager';
 
@@ -250,57 +249,6 @@ export class AuthService {
       }),
     ]);
     return { accessToken, refreshToken };
-  }
-
-  async validateSocialLogin(profile: any): Promise<User> {
-    return this.entityManager.transaction(async (manager) => {
-      const socialAccount = await manager.findOne(SocialAccount, {
-        where: {
-          provider: profile.provider,
-          providerUserId: profile.providerId,
-        },
-        relations: ['user'],
-      });
-
-      if (socialAccount) {
-        // User found, login successful
-        return socialAccount.user;
-      }
-
-      // If social account not found, check if a user with this email already exists
-      let user = await manager.findOne(User, {
-        where: { email: profile.email },
-      });
-
-      if (user) {
-        // User with this email exists, but hasn't linked this social account yet.
-        // For security, we link them here automatically, but a more secure flow
-        // would ask them to log in with their password first. We follow the spec.
-        // Note: The spec was updated to NOT link automatically. This code should
-        // throw an error to be handled by the frontend.
-        // For now, we will link it as per initial thought, can be refined.
-      } else {
-        // This is a new user
-        user = manager.create(User, {
-          email: profile.email,
-          fullName: profile.fullName,
-          avatarUrl: profile.avatarUrl,
-          status: UserStatus.ACTIVE,
-          passwordHash: null, // No password for social login
-        });
-        await manager.save(user);
-      }
-
-      // Create and link the social account
-      const newSocialAccount = manager.create(SocialAccount, {
-        provider: profile.provider,
-        providerUserId: profile.providerId,
-        userId: user.id,
-      });
-      await manager.save(newSocialAccount);
-
-      return user;
-    });
   }
 
   async generateOneTimeCode(userId: string): Promise<string> {

@@ -4,8 +4,6 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './auth/auth.module';
 import { UserModule } from './user/user.module';
-import { FacebookConnectModule } from './facebook-connect/facebook-connect.module';
-import { WebhookModule } from './webhook/webhook.module';
 import { InboxModule } from './inbox/inbox.module';
 import { GatewayModule } from './gateway/gateway.module';
 import { BillingModule } from './billing/billing.module';
@@ -17,7 +15,6 @@ import { HttpModule } from '@nestjs/axios';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { RawBodyMiddleware } from './common/middleware/raw-body.middleware';
-import { FacebookApiModule } from './facebook-api/facebook-api.module';
 import { CommonModule } from './common/common.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-redis-store';
@@ -56,14 +53,11 @@ import { redisStore } from 'cache-manager-redis-store';
     }),
     AuthModule,
     UserModule,
-    FacebookConnectModule,
-    WebhookModule,
     InboxModule,
     GatewayModule,
     BillingModule,
     UsageModule,
     RbacModule,
-    FacebookApiModule,
     CommonModule,
   ],
   controllers: [AppController],

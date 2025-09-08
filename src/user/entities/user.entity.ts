@@ -1,4 +1,3 @@
-import { ConnectedPage } from '../../facebook-connect/entities/connected-page.entity';
 import { RefreshToken } from '../../auth/entities/refresh-token.entity';
 import {
   Entity,
@@ -8,8 +7,8 @@ import {
   UpdateDateColumn,
   OneToMany,
 } from 'typeorm';
-import { SocialAccount } from '../../auth/entities/social-account.entity';
 import { TwoFactorRecoveryCode } from '../../auth/entities/two-factor-recovery-code.entity';
+import { Project } from 'src/projects/entities/project.entity';
 
 export enum UserStatus {
   ACTIVE = 'active',
@@ -59,9 +58,6 @@ export class User {
   @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   tokensValidFrom: Date;
 
-  @OneToMany(() => ConnectedPage, (page) => page.user)
-  connectedPages: ConnectedPage[];
-
   // --- Nhóm 4: Tính năng mới (2FA & Social Login) ---
   @Column({ default: false })
   isTwoFactorAuthenticationEnabled: boolean;
@@ -69,11 +65,11 @@ export class User {
   @Column({ type: 'text', nullable: true })
   twoFactorAuthenticationSecret: string | null;
 
-  @OneToMany(() => SocialAccount, (account) => account.user)
-  socialAccounts: SocialAccount[];
-
   @OneToMany(() => TwoFactorRecoveryCode, (code) => code.user)
   recoveryCodes: TwoFactorRecoveryCode[];
+
+  @OneToMany(() => Project, (project) => project.user)
+  projects: Project[];
 
   // --- Nhóm 5: Dấu vết Thời gian ---
   @CreateDateColumn({ type: 'timestamptz' })

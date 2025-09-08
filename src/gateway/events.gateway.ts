@@ -1,52 +1,45 @@
+// src/gateway/events.gateway.ts
+
 import {
-  OnGatewayConnection,
-  OnGatewayDisconnect,
   WebSocketGateway,
+  SubscribeMessage,
+  MessageBody,
   WebSocketServer,
+  ConnectedSocket,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { Logger, UseGuards } from '@nestjs/common';
-import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
+import { SqsService } from '../event-producer/sqs.service';
 
-@WebSocketGateway()
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  private readonly logger = new Logger(EventsGateway.name);
-
+@WebSocketGateway({ cors: true })
+export class EventsGateway {
   @WebSocketServer()
   server: Server;
 
-  @UseGuards(WsJwtAuthGuard)
-  handleConnection(client: Socket, ...args: any[]) {
-    const userId = client.data.user?.id;
-    if (!userId) {
-      this.logger.warn(`Client connected without user data. Disconnecting.`);
-      client.disconnect(true);
-      return;
-    }
+  // SỬA LỖI: Không cần inject ConfigService ở đây nữa
+  constructor(private readonly sqsService: SqsService) {}
 
-    // Each user joins a room named after their own ID.
-    // This ensures that we can emit events specifically to a single user.
-    const roomName = `user:${userId}`;
-    client.join(roomName);
+  @SubscribeMessage('newMessageFromVisitor')
+  async handleNewMessage(
+    @MessageBody()
+    data: { visitorUid: string; projectId: number; text: string },
+    @ConnectedSocket() client: Socket
+  ): Promise<void> {
+    const eventPayload = {
+      type: 'NEW_MESSAGE_FROM_VISITOR',
+      payload: {
+        ...data,
+        socketId: client.id,
+      },
+      timestamp: new Date().toISOString(),
+    };
 
-    this.logger.log(
-      `Client connected: ${client.id}, User ID: ${userId}, Joined room: ${roomName}`
-    );
+    // SỬA LỖI: Lệnh gọi đã được đơn giản hóa
+    await this.sqsService.sendMessage(eventPayload);
+
+    client.emit('message_received_ack');
   }
 
-  handleDisconnect(client: Socket) {
-    this.logger.log(`Client disconnected: ${client.id}`);
-  }
-
-  /**
-   * Emits an event to a specific user's room.
-   * @param userId The ID of the user to send the event to.
-   * @param event The event name (e.g., 'message:new').
-   * @param payload The data to send with the event.
-   */
-  sendToUser(userId: string, event: string, payload: any) {
-    const roomName = `user:${userId}`;
-    this.logger.log(`Emitting event '${event}' to room '${roomName}'`);
-    this.server.to(roomName).emit(event, payload);
+  sendReplyToVisitor(visitorSocketId: string, message: any) {
+    this.server.to(visitorSocketId).emit('agent_reply', message);
   }
 }

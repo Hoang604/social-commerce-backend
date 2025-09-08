@@ -10,21 +10,15 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { RefreshTokenStrategy } from './strategies/refresh-token.strategy';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { SocialAccount } from './entities/social-account.entity';
 import { TwoFactorRecoveryCode } from './entities/two-factor-recovery-code.entity';
 import { TwoFactorAuthenticationController } from './2fa/two-factor-authentication.controller';
-import { FacebookStrategy } from './strategies/facebook.strategy';
 import { TwoFactorAuthenticationService } from './2fa/two-factor-authentication.service';
 import { EncryptionService } from 'src/common/services/encryption.service';
 import { TwoFactorAuthenticationStrategy } from './strategies/2fa-partial-token.strategy';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([
-      RefreshToken,
-      SocialAccount,
-      TwoFactorRecoveryCode,
-    ]),
+    TypeOrmModule.forFeature([RefreshToken, TwoFactorRecoveryCode]),
     UserModule,
     PassportModule,
     ConfigModule,
@@ -42,7 +36,6 @@ import { TwoFactorAuthenticationStrategy } from './strategies/2fa-partial-token.
   controllers: [AuthController, TwoFactorAuthenticationController],
   providers: [
     AuthService,
-    FacebookStrategy,
     TwoFactorAuthenticationService,
     LocalStrategy,
     JwtStrategy,

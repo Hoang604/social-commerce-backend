@@ -9,9 +9,9 @@ import {
   JoinColumn,
   Index,
 } from 'typeorm';
-import { ConnectedPage } from '../../facebook-connect/entities/connected-page.entity';
 import { Message } from './message.entity';
-import { FacebookParticipant } from './facebook-participant.entity';
+import { Project } from 'src/projects/entities/project.entity';
+import { Visitor } from './visitor.entity';
 
 export enum ConversationStatus {
   OPEN = 'open',
@@ -24,24 +24,17 @@ export class Conversation {
   @PrimaryGeneratedColumn('increment', { type: 'bigint' })
   id: number;
 
-  @Index()
-  @Column({ type: 'uuid', name: 'connected_page_id' })
-  connectedPageId: string;
+  @ManyToOne(() => Project, (project) => project.conversations, {
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'project_id' })
+  project: Project;
 
-  @ManyToOne(() => ConnectedPage, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'connected_page_id' })
-  connectedPage: ConnectedPage;
-
-  @Index()
-  @Column({ type: 'bigint', name: 'participant_id' })
-  participantId: number;
-
-  @ManyToOne(() => FacebookParticipant, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'participant_id' })
-  participant: FacebookParticipant;
-
-  @Column({ unique: true, name: 'facebook_conversation_id' })
-  facebookConversationId: string;
+  @ManyToOne(() => Visitor, (visitor) => visitor.conversations, {
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'visitor_id' })
+  visitor: Visitor;
 
   @Column({ type: 'text', nullable: true, name: 'last_message_snippet' })
   lastMessageSnippet: string | null;
