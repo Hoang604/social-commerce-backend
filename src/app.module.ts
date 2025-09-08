@@ -9,6 +9,7 @@ import { GatewayModule } from './gateway/gateway.module';
 import { BillingModule } from './billing/billing.module';
 import { UsageModule } from './usage/usage.module';
 import { RbacModule } from './rbac/rbac.module';
+import { ProjectModule } from './projects/project.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { HttpModule } from '@nestjs/axios';
@@ -58,6 +59,7 @@ import { redisStore } from 'cache-manager-redis-store';
     BillingModule,
     UsageModule,
     RbacModule,
+    ProjectModule,
     CommonModule,
   ],
   controllers: [AppController],

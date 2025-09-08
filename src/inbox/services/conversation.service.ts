@@ -95,7 +95,7 @@ export class ConversationService {
       .leftJoin('conversation.project', 'project')
       .leftJoinAndSelect('conversation.visitor', 'visitor')
       .where('project.userId = :userId', { userId: user.id })
-      .andWhere('conversation.projectId = :projectId', { projectId });
+      .andWhere('project.id = :projectId', { projectId });
 
     if (status) {
       qb.andWhere('conversation.status = :status', { status });

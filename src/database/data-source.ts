@@ -4,6 +4,8 @@ import { User } from '../user/entities/user.entity';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
 import { Conversation } from '../inbox/entities/conversation.entity';
 import { Message } from '../inbox/entities/message.entity';
+import { Visitor } from '../inbox/entities/visitor.entity';
+import { Project } from '../projects/entities/project.entity';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import * as dotenv from 'dotenv';
 import { ConfigService } from '@nestjs/config';
@@ -27,7 +29,8 @@ export const AppDataSource = new DataSource({
     RefreshToken,
     Conversation,
     Message,
-    Comment,
+    Visitor,
+    Project,
     TwoFactorRecoveryCode,
   ],
   migrations: ['src/database/migrations/*.ts'],

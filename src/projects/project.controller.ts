@@ -16,7 +16,7 @@ import { GetCurrentUser } from '../common/decorators/get-current-user.decorator'
 import { User } from '../user/entities/user.entity';
 
 @UseGuards(JwtAuthGuard)
-@Controller('projects')
+@Controller('/api/v1/projects')
 export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
 
