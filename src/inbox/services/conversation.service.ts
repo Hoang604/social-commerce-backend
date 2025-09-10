@@ -2,6 +2,8 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
@@ -20,6 +22,7 @@ export class ConversationService {
     @InjectRepository(Conversation)
     private readonly conversationRepository: Repository<Conversation>,
     private readonly realtimeSessionService: RealtimeSessionService,
+    @Inject(forwardRef(() => EventsGateway))
     private readonly eventsGateway: EventsGateway
   ) {}
 

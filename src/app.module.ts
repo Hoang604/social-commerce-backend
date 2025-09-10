@@ -19,6 +19,7 @@ import { RawBodyMiddleware } from './common/middleware/raw-body.middleware';
 import { CommonModule } from './common/common.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-redis-store';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { redisStore } from 'cache-manager-redis-store';
       timeout: 5000,
       maxRedirects: 5,
     }),
+    RedisModule,
     AuthModule,
     UserModule,
     InboxModule,

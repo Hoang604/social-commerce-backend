@@ -12,7 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { SqsService } from '../event-producer/sqs.service';
 import { ConversationService } from '../inbox/services/conversation.service';
 import { VisitorService } from '../inbox/services/visitor.service';
-import { Logger } from '@nestjs/common';
+import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { RealtimeSessionService } from '../realtime-session/realtime-session.service';
 
 @WebSocketGateway({ cors: true })
@@ -24,7 +24,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(
     private readonly sqsService: SqsService,
+    @Inject(forwardRef(() => ConversationService))
     private readonly conversationService: ConversationService,
+    @Inject(forwardRef(() => VisitorService))
     private readonly visitorService: VisitorService,
     private readonly realtimeSessionService: RealtimeSessionService
   ) {}

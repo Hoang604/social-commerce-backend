@@ -1,30 +1,26 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { EventsGateway } from './events.gateway';
 import { AuthModule } from '../auth/auth.module';
 import { UserModule } from '../user/user.module';
 import { JwtService } from '@nestjs/jwt';
 import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
-import { SqsService } from 'src/event-producer/sqs.service';
-import { ConversationService } from 'src/inbox/services/conversation.service';
-import { VisitorService } from 'src/inbox/services/visitor.service';
 import { Conversation } from 'src/inbox/entities/conversation.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Visitor } from 'src/inbox/entities/visitor.entity';
+import { InboxModule } from 'src/inbox/inbox.module';
+import { EventProducerModule } from 'src/event-producer/event-producer.module';
+import { RealtimeSessionModule } from 'src/realtime-session/realtime-session.module';
 
 @Module({
   imports: [
     AuthModule,
     UserModule,
+    forwardRef(() => InboxModule),
     TypeOrmModule.forFeature([Conversation, Visitor]),
+    EventProducerModule,
+    RealtimeSessionModule,
   ],
-  providers: [
-    EventsGateway,
-    ConversationService,
-    WsJwtAuthGuard,
-    JwtService, // Provide JwtService for the guard
-    SqsService,
-    VisitorService,
-  ],
-  exports: [EventsGateway], // Export if other modules need to call it directly (though event-driven is preferred)
+  providers: [EventsGateway, WsJwtAuthGuard, JwtService],
+  exports: [EventsGateway],
 })
 export class GatewayModule {}

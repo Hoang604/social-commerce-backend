@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Conversation } from './entities/conversation.entity';
 import { Message } from './entities/message.entity';
@@ -14,7 +14,7 @@ import { RealtimeSessionModule } from 'src/realtime-session/realtime-session.mod
 @Module({
   imports: [
     TypeOrmModule.forFeature([Conversation, Message, Visitor]),
-    GatewayModule,
+    forwardRef(() => GatewayModule),
     RealtimeSessionModule,
   ],
   providers: [
