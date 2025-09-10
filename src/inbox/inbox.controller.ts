@@ -7,8 +7,8 @@ import {
   Body,
   Query,
   UseGuards,
-  Req,
   ParseIntPipe,
+  HttpCode,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ConversationService } from './services/conversation.service';
@@ -19,6 +19,7 @@ import { SendReplyDto } from './dto/send-reply.dto';
 import { ListMessagesDto } from './dto/list-messages.dto';
 import { GetCurrentUser } from '../common/decorators/get-current-user.decorator';
 import { User } from '../user/entities/user.entity';
+import { AgentTypingDto } from './dto/agent-typing.dto';
 
 @Controller('api/v1/inbox')
 @UseGuards(JwtAuthGuard)
@@ -67,5 +68,19 @@ export class InboxController {
   ) {
     // SỬA LỖI: Gọi phương thức đã được bổ sung
     return this.messageService.listByConversation(user, conversationId, query);
+  }
+  @Post('conversations/:id/typing')
+  @HttpCode(204) // No Content
+  @HttpCode(204) // No Content
+  async handleAgentTyping(
+    @GetCurrentUser() user: User,
+    @Param('id', ParseIntPipe) conversationId: number,
+    @Body() body: AgentTypingDto
+  ) {
+    await this.conversationService.handleAgentTyping(
+      user,
+      conversationId,
+      body.isTyping
+    );
   }
 }

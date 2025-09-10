@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import {
@@ -7,12 +11,16 @@ import {
 } from '../entities/conversation.entity';
 import { ListConversationsDto } from '../dto/list-conversations.dto';
 import { User } from 'src/user/entities/user.entity';
+import { RealtimeSessionService } from 'src/realtime-session/realtime-session.service';
+import { EventsGateway } from 'src/gateway/events.gateway';
 
 @Injectable()
 export class ConversationService {
   constructor(
     @InjectRepository(Conversation)
-    private readonly conversationRepository: Repository<Conversation>
+    private readonly conversationRepository: Repository<Conversation>,
+    private readonly realtimeSessionService: RealtimeSessionService,
+    private readonly eventsGateway: EventsGateway
   ) {}
 
   /**
@@ -171,5 +179,40 @@ export class ConversationService {
         },
       },
     });
+  }
+
+  /**
+   * @NEW_FEATURE
+   * Xử lý và phát sự kiện "agent đang gõ" tới visitor.
+   */
+  async handleAgentTyping(
+    user: User,
+    conversationId: number,
+    isTyping: boolean
+  ): Promise<void> {
+    // Bước 1: Kiểm tra quyền và lấy thông tin visitor
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+      relations: ['visitor', 'project'],
+    });
+
+    if (!conversation || conversation.project.userId !== user.id) {
+      throw new ForbiddenException('Access to this conversation is denied.');
+    }
+
+    const visitorUid = conversation.visitor.visitorUid;
+
+    // Bước 2: Tra cứu socket.id của visitor
+    const visitorSocketId =
+      await this.realtimeSessionService.getVisitorSession(visitorUid);
+
+    // Bước 3: Gửi sự kiện NẾU visitor đang online
+    if (visitorSocketId) {
+      this.eventsGateway.sendAgentTypingToVisitor(
+        visitorSocketId,
+        isTyping,
+        user.fullName || 'Agent' // Sử dụng fullName hoặc một tên mặc định
+      );
+    }
   }
 }

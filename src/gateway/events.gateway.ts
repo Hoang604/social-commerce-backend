@@ -120,4 +120,42 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.realtimeSessionService.deleteVisitorSession(client.data.visitorUid);
     }
   }
+
+  /**
+   * @NEW_FEATURE
+   * Lắng nghe sự kiện khi visitor chuyển trang và thông báo cho dashboard.
+   */
+  @SubscribeMessage('updateContext')
+  handleUpdateContext(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { currentUrl: string }
+  ): void {
+    const { projectId, conversationId } = client.data;
+    if (!projectId || !conversationId) {
+      return;
+    }
+
+    // Phát sự kiện này đến room của project.
+    // Dashboard của các agent đang theo dõi project này sẽ nhận được.
+    this.server.to(`project:${projectId}`).emit('visitorContextUpdated', {
+      conversationId,
+      currentUrl: payload.currentUrl,
+    });
+  }
+
+  /**
+   * @NEW_FEATURE
+   * Gửi sự kiện "agent đang gõ" tới một visitor cụ thể.
+   * Được gọi từ ConversationService.
+   */
+  public sendAgentTypingToVisitor(
+    visitorSocketId: string,
+    isTyping: boolean,
+    agentName: string
+  ) {
+    this.server.to(visitorSocketId).emit('agentTyping', {
+      agentName,
+      isTyping,
+    });
+  }
 }
