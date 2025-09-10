@@ -150,4 +150,26 @@ export class ConversationService {
     conversation.unreadCount = 0;
     return this.conversationRepository.save(conversation);
   }
+
+  /**
+   * @NEW
+   * Gets the active conversation and its recent messages for a given visitor ID.
+   * Intended for use by the EventsGateway to provide chat history on connect.
+   * @param visitorId The ID of the visitor.
+   * @returns The Conversation entity with messages, or null if not found.
+   */
+  async getHistoryByVisitorId(visitorId: number): Promise<Conversation | null> {
+    return this.conversationRepository.findOne({
+      where: {
+        visitor: { id: visitorId },
+        status: ConversationStatus.OPEN, // Optional: only get open conversations
+      },
+      relations: ['messages'], // Eagerly load messages
+      order: {
+        messages: {
+          createdAt: 'ASC', // Order messages chronologically
+        },
+      },
+    });
+  }
 }

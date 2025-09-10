@@ -50,7 +50,7 @@ export class Message {
   @Column({
     type: 'enum',
     enum: MessageStatus,
-    default: MessageStatus.SENT,
+    default: MessageStatus.SENDING,
   })
   status: MessageStatus;
 

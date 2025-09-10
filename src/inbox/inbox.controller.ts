@@ -34,7 +34,6 @@ export class InboxController {
     @Query('projectId', ParseIntPipe) projectId: number,
     @Query() query: ListConversationsDto
   ) {
-    // SỬA LỖI: Gọi đúng phương thức `listByProject`
     return this.conversationService.listByProject(user, projectId, query);
   }
 
@@ -44,13 +43,7 @@ export class InboxController {
     @Param('id', ParseIntPipe) conversationId: number,
     @Body() body: SendReplyDto
   ) {
-    // SỬA LỖI: Gọi đúng phương thức `sendAgentReply` và truyền đủ tham số
-    return this.messageService.sendAgentReply(
-      user,
-      conversationId,
-      body.text,
-      body.visitorId // Truyền visitorId từ body
-    );
+    return this.messageService.sendAgentReply(user, conversationId, body.text);
   }
 
   @Patch('conversations/:id')

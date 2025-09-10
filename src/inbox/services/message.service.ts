@@ -8,6 +8,7 @@ import { User } from 'src/user/entities/user.entity';
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
 import { ListMessagesDto } from '../dto/list-messages.dto';
 import { Conversation } from '../entities/conversation.entity';
+import { RealtimeSessionService } from 'src/realtime-session/realtime-session.service';
 
 // Định nghĩa lại DTO cho việc tạo tin nhắn, loại bỏ các trường Facebook cũ
 interface CreateMessagePayload {
@@ -27,6 +28,9 @@ export class MessageService {
   constructor(
     @InjectRepository(Message)
     private readonly messageRepository: Repository<Message>,
+    @InjectRepository(Conversation)
+    private readonly conversationRepository: Repository<Conversation>,
+    private readonly realtimeSessionService: RealtimeSessionService,
     private readonly eventsGateway: EventsGateway
   ) {}
 
@@ -50,30 +54,44 @@ export class MessageService {
   async sendAgentReply(
     user: User,
     conversationId: number,
-    replyText: string,
-    visitorId: string // Cần visitorId để biết người nhận
-    // visitorSocketId: string // SocketId sẽ được quản lý bởi Gateway, không cần truyền vào đây
+    replyText: string
   ): Promise<Message> {
-    // Lưu ý: Cần thêm logic để lấy visitorSocketId từ một nơi quản lý session, ví dụ Redis
-    // Tạm thời hardcode để minh họa
-    const visitorSocketId = 'some-socket-id-of-the-visitor';
+    // Bước 1: Tìm conversation và visitor liên quan
+    const conversation = await this.conversationRepository.findOne({
+      where: { id: conversationId },
+      relations: ['visitor', 'project'],
+    });
 
+    if (!conversation || conversation.project.userId !== user.id) {
+      throw new ForbiddenException('Access to this conversation is denied.');
+    }
+
+    const visitorUid = conversation.visitor.visitorUid;
+
+    // Bước 2: Tạo và lưu tin nhắn vào CSDL
     const message = this.messageRepository.create({
-      conversationId: conversationId,
+      conversation: { id: conversationId },
       content: replyText,
-      senderId: user.id, // ID của nhân viên gửi tin
-      recipientId: visitorId, // ID của khách truy cập
+      senderId: user.id.toString(),
+      recipientId: visitorUid,
       fromCustomer: false,
       status: MessageStatus.SENDING,
     });
+    let savedMessage = await this.messageRepository.save(message);
 
-    const savedMessage = await this.messageRepository.save(message);
+    // Bước 3: Tra cứu socket.id từ Redis
+    const visitorSocketId =
+      await this.realtimeSessionService.getVisitorSession(visitorUid);
 
-    // Phát sự kiện qua Gateway để đẩy tin nhắn xuống widget
-    this.eventsGateway.sendReplyToVisitor(visitorSocketId, savedMessage);
+    // Bước 4: Gửi sự kiện real-time NẾU visitor đang online
+    if (visitorSocketId) {
+      this.eventsGateway.sendReplyToVisitor(visitorSocketId, savedMessage);
+      savedMessage.status = MessageStatus.SENT;
+    } else {
+      savedMessage.status = MessageStatus.DELIVERED;
+    }
 
-    // Cập nhật trạng thái tin nhắn thành "sent" sau khi gửi qua gateway
-    savedMessage.status = MessageStatus.SENT;
+    // Cập nhật lại trạng thái tin nhắn
     return this.messageRepository.save(savedMessage);
   }
 

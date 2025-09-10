@@ -9,11 +9,13 @@ import { EncryptionService } from '../common/services/encryption.service';
 import { GatewayModule } from '../gateway/gateway.module';
 import { VisitorService } from './services/visitor.service';
 import { Visitor } from './entities/visitor.entity';
+import { RealtimeSessionModule } from 'src/realtime-session/realtime-session.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Conversation, Message, Visitor]),
-    GatewayModule, // Add GatewayModule here
+    GatewayModule,
+    RealtimeSessionModule,
   ],
   providers: [
     ConversationService,

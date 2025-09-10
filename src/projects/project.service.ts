@@ -47,4 +47,41 @@ export class ProjectService {
     });
     return updated;
   }
+  public async getWidgetSettings(
+    id: number,
+    origin: string | undefined
+  ): Promise<{ primaryColor: string; welcomeMessage: string } | null> {
+    const project = await this.projectRepository.findOneBy({ id });
+
+    if (!project) {
+      return null; // Không tìm thấy project
+    }
+
+    // Logic kiểm tra domain vẫn giữ nguyên
+    if (project.whitelistedDomains && project.whitelistedDomains.length > 0) {
+      if (origin) {
+        const originUrl = new URL(origin);
+        const originDomain = originUrl.hostname;
+        if (!project.whitelistedDomains.includes(originDomain)) {
+          return null; // Origin không được phép
+        }
+      } else {
+        return null; // Nếu có whitelist, bắt buộc phải có origin
+      }
+    }
+
+    // SỬA LỖI: Truy cập vào các thuộc tính lồng trong widgetSettings
+    // Giả định rằng widgetSettings có kiểu { primaryColor: string, welcomeMessage: string }
+    const settings = project.widgetSettings as {
+      primaryColor?: string;
+      welcomeMessage?: string;
+    };
+
+    return {
+      primaryColor: settings?.primaryColor || '#1a73e8', // Cung cấp giá trị mặc định
+      welcomeMessage:
+        settings?.welcomeMessage ||
+        'Chào bạn, chúng tôi có thể giúp gì cho bạn?', // Cung cấp giá trị mặc định
+    };
+  }
 }

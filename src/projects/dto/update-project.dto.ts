@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsUrl, IsObject } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsUrl,
+  IsObject,
+  IsArray,
+} from 'class-validator';
 
 export class UpdateProjectDto {
   @IsOptional()
@@ -12,4 +18,9 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsObject()
   widgetSettings?: object;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  whitelistedDomains?: string[];
 }

@@ -34,6 +34,14 @@ export class Project {
   @Column({ type: 'jsonb', default: {} })
   widgetSettings: object;
 
+  @Column({
+    type: 'text',
+    array: true,
+    nullable: true,
+    name: 'whitelisted_domains',
+  })
+  whitelistedDomains: string[];
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 }
