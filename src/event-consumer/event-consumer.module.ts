@@ -8,7 +8,6 @@ import { InboxModule } from '../inbox/inbox.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 
-// Đổi tên hằng số của hàng đợi để phản ánh đúng mục đích
 export const LIVE_CHAT_EVENTS_QUEUE = 'live-chat-events-queue';
 
 @Module({
@@ -23,16 +22,14 @@ export const LIVE_CHAT_EVENTS_QUEUE = 'live-chat-events-queue';
       useFactory: (configService: ConfigService) => ({
         consumers: [
           {
-            name: LIVE_CHAT_EVENTS_QUEUE, // Sử dụng tên hàng đợi mới
+            name: LIVE_CHAT_EVENTS_QUEUE,
             queueUrl: configService.get<string>('AWS_SQS_QUEUE_URL') as string,
             region: configService.get<string>('AWS_REGION') as string,
-            // Các cấu hình khác giữ nguyên
           },
         ],
         producers: [],
       }),
     }),
-    // Cấu hình TypeOrm cho worker process
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
@@ -47,8 +44,8 @@ export const LIVE_CHAT_EVENTS_QUEUE = 'live-chat-events-queue';
         synchronize: false,
       }),
     }),
-    InboxModule, // Import InboxModule để có thể sử dụng các services của nó
+    InboxModule,
   ],
-  providers: [EventConsumerService], // EventConsumerService đã có thể inject các services từ InboxModule
+  providers: [EventConsumerService],
 })
 export class EventConsumerModule {}

@@ -5,8 +5,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import {
   Conversation,
   ConversationStatus,
@@ -19,12 +18,21 @@ import { EventsGateway } from 'src/gateway/events.gateway';
 @Injectable()
 export class ConversationService {
   constructor(
-    @InjectRepository(Conversation)
-    private readonly conversationRepository: Repository<Conversation>,
+    private readonly entityManager: EntityManager,
     private readonly realtimeSessionService: RealtimeSessionService,
     @Inject(forwardRef(() => EventsGateway))
     private readonly eventsGateway: EventsGateway
   ) {}
+
+  async findById(id: number): Promise<Conversation> {
+    const conversation = await this.entityManager.findOne(Conversation, {
+      where: { id },
+    });
+    if (!conversation) {
+      throw new NotFoundException(`Conversation with ID ${id} not found.`);
+    }
+    return conversation;
+  }
 
   /**
    * Finds an existing conversation for a visitor or creates a new one.
@@ -101,8 +109,8 @@ export class ConversationService {
   ) {
     const { status, page = 1, limit = 10 } = query;
 
-    const qb = this.conversationRepository
-      .createQueryBuilder('conversation')
+    const qb = this.entityManager
+      .createQueryBuilder(Conversation, 'conversation')
       .leftJoin('conversation.project', 'project')
       .leftJoinAndSelect('conversation.visitor', 'visitor')
       .where('project.userId = :userId', { userId: user.id })
@@ -122,44 +130,80 @@ export class ConversationService {
 
   /**
    * Updates the status of a conversation (e.g., 'open', 'closed').
+   * @param user - The authenticated user.
    * @param conversationId - The ID of the conversation.
    * @param status - The new status.
    * @returns The updated conversation.
    */
   async updateStatus(
+    userId: string,
     conversationId: number,
     status: ConversationStatus
   ): Promise<Conversation> {
-    // We should also add a check here to ensure the user has access to this conversation's project
-    const conversation = await this.conversationRepository.findOneBy({
-      id: conversationId,
-    });
-    if (!conversation) {
-      throw new NotFoundException(
-        `Conversation with ID ${conversationId} not found.`
-      );
-    }
-    conversation.status = status;
-    return this.conversationRepository.save(conversation);
+    return this.entityManager.transaction(
+      async (transactionalEntityManager) => {
+        const conversation = await transactionalEntityManager.findOne(
+          Conversation,
+          {
+            where: { id: conversationId },
+            relations: ['project'],
+          }
+        );
+
+        if (!conversation) {
+          throw new NotFoundException(
+            `Conversation with ID ${conversationId} not found.`
+          );
+        }
+
+        if (conversation.project.userId !== userId) {
+          throw new ForbiddenException(
+            'Access to this conversation is denied.'
+          );
+        }
+
+        conversation.status = status;
+        return transactionalEntityManager.save(conversation);
+      }
+    );
   }
 
   /**
    * Marks a conversation as read by resetting its unread count.
+   * @param user - The authenticated user.
    * @param conversationId - The ID of the conversation.
    * @returns The updated conversation.
    */
-  async markAsRead(conversationId: number): Promise<Conversation> {
-    // Similar to updateStatus, an ownership check would be ideal here too
-    const conversation = await this.conversationRepository.findOneBy({
-      id: conversationId,
-    });
-    if (!conversation) {
-      throw new NotFoundException(
-        `Conversation with ID ${conversationId} not found.`
-      );
-    }
-    conversation.unreadCount = 0;
-    return this.conversationRepository.save(conversation);
+  async markAsRead(
+    userId: string,
+    conversationId: number
+  ): Promise<Conversation> {
+    return this.entityManager.transaction(
+      async (transactionalEntityManager) => {
+        const conversation = await transactionalEntityManager.findOne(
+          Conversation,
+          {
+            where: { id: conversationId },
+            relations: ['project'],
+          }
+        );
+
+        if (!conversation) {
+          throw new NotFoundException(
+            `Conversation with ID ${conversationId} not found.`
+          );
+        }
+
+        if (conversation.project.userId !== userId) {
+          throw new ForbiddenException(
+            'Access to this conversation is denied.'
+          );
+        }
+
+        conversation.unreadCount = 0;
+        return transactionalEntityManager.save(conversation);
+      }
+    );
   }
 
   /**
@@ -170,7 +214,7 @@ export class ConversationService {
    * @returns The Conversation entity with messages, or null if not found.
    */
   async getHistoryByVisitorId(visitorId: number): Promise<Conversation | null> {
-    return this.conversationRepository.findOne({
+    return this.entityManager.findOne(Conversation, {
       where: {
         visitor: { id: visitorId },
         status: ConversationStatus.OPEN, // Optional: only get open conversations
@@ -194,7 +238,7 @@ export class ConversationService {
     isTyping: boolean
   ): Promise<void> {
     // Bước 1: Kiểm tra quyền và lấy thông tin visitor
-    const conversation = await this.conversationRepository.findOne({
+    const conversation = await this.entityManager.findOne(Conversation, {
       where: { id: conversationId },
       relations: ['visitor', 'project'],
     });

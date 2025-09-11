@@ -9,6 +9,7 @@ import {
   UseGuards,
   ParseIntPipe,
   HttpCode,
+  Req,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ConversationService } from './services/conversation.service';
@@ -49,14 +50,20 @@ export class InboxController {
 
   @Patch('conversations/:id')
   updateConversation(
+    @GetCurrentUser() user: User,
     @Param('id', ParseIntPipe) conversationId: number,
     @Body() body: UpdateConversationDto
   ) {
+    const userId = user.id;
     if (body.status) {
-      return this.conversationService.updateStatus(conversationId, body.status);
+      return this.conversationService.updateStatus(
+        userId,
+        conversationId,
+        body.status
+      );
     }
     if (body.read === true) {
-      return this.conversationService.markAsRead(conversationId);
+      return this.conversationService.markAsRead(userId, conversationId);
     }
   }
 
@@ -70,7 +77,6 @@ export class InboxController {
     return this.messageService.listByConversation(user, conversationId, query);
   }
   @Post('conversations/:id/typing')
-  @HttpCode(204) // No Content
   @HttpCode(204) // No Content
   async handleAgentTyping(
     @GetCurrentUser() user: User,

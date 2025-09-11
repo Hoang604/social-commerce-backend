@@ -1,8 +1,7 @@
 // src/inbox/services/message.service.ts
 
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { Message, MessageStatus } from '../entities/message.entity';
-import { InjectRepository } from '@nestjs/typeorm';
 import { EventsGateway } from 'src/gateway/events.gateway';
 import { User } from 'src/user/entities/user.entity';
 import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
@@ -26,10 +25,7 @@ export class MessageService {
   private readonly logger = new Logger(MessageService.name);
 
   constructor(
-    @InjectRepository(Message)
-    private readonly messageRepository: Repository<Message>,
-    @InjectRepository(Conversation)
-    private readonly conversationRepository: Repository<Conversation>,
+    private readonly entityManager: EntityManager,
     private readonly realtimeSessionService: RealtimeSessionService,
     private readonly eventsGateway: EventsGateway
   ) {}
@@ -42,9 +38,8 @@ export class MessageService {
     data: CreateMessagePayload,
     manager: EntityManager
   ): Promise<Message> {
-    const messageRepo = manager.getRepository(Message);
-    const message = messageRepo.create(data);
-    return messageRepo.save(message);
+    const message = manager.create(Message, data);
+    return manager.save(message);
   }
 
   /**
@@ -56,34 +51,45 @@ export class MessageService {
     conversationId: number,
     replyText: string
   ): Promise<Message> {
-    // Bước 1: Tìm conversation và visitor liên quan
-    const conversation = await this.conversationRepository.findOne({
-      where: { id: conversationId },
-      relations: ['visitor', 'project'],
-    });
+    const savedMessage = await this.entityManager.transaction(
+      async (transactionalEntityManager) => {
+        // Bước 1: Tìm conversation và visitor liên quan
+        const conversation = await transactionalEntityManager.findOne(
+          Conversation,
+          {
+            where: { id: conversationId },
+            relations: ['visitor', 'project'],
+          }
+        );
 
-    if (!conversation || conversation.project.userId !== user.id) {
-      throw new ForbiddenException('Access to this conversation is denied.');
-    }
+        if (!conversation || conversation.project.userId !== user.id) {
+          throw new ForbiddenException(
+            'Access to this conversation is denied.'
+          );
+        }
 
-    const visitorUid = conversation.visitor.visitorUid;
+        const visitorUid = conversation.visitor.visitorUid;
 
-    // Bước 2: Tạo và lưu tin nhắn vào CSDL
-    const message = this.messageRepository.create({
-      conversation: { id: conversationId },
-      content: replyText,
-      senderId: user.id.toString(),
-      recipientId: visitorUid,
-      fromCustomer: false,
-      status: MessageStatus.SENDING,
-    });
-    let savedMessage = await this.messageRepository.save(message);
+        // Bước 2: Tạo và lưu tin nhắn vào CSDL
+        const message = transactionalEntityManager.create(Message, {
+          conversation: { id: conversationId },
+          content: replyText,
+          senderId: user.id.toString(),
+          recipientId: visitorUid,
+          fromCustomer: false,
+          status: MessageStatus.SENDING,
+        });
+        return transactionalEntityManager.save(message);
+      }
+    );
 
+    // Các bước sau không tương tác DB, có thể nằm ngoài transaction
     // Bước 3: Tra cứu socket.id từ Redis
-    const visitorSocketId =
-      await this.realtimeSessionService.getVisitorSession(visitorUid);
+    const visitorSocketId = await this.realtimeSessionService.getVisitorSession(
+      savedMessage.recipientId
+    );
 
-    // Bước 4: Gửi sự kiện real-time NẾU visitor đang online
+    // Bước 4: Gửi sự kiện real-time và cập nhật trạng thái cuối cùng
     if (visitorSocketId) {
       this.eventsGateway.sendReplyToVisitor(visitorSocketId, savedMessage);
       savedMessage.status = MessageStatus.SENT;
@@ -92,7 +98,7 @@ export class MessageService {
     }
 
     // Cập nhật lại trạng thái tin nhắn
-    return this.messageRepository.save(savedMessage);
+    return this.entityManager.save(savedMessage);
   }
 
   async listByConversation(
@@ -103,20 +109,17 @@ export class MessageService {
     const { limit = 20, cursor } = query;
 
     // Kiểm tra quyền: Đảm bảo user có quyền truy cập vào conversation này
-    const conversation = await this.messageRepository.manager.findOne(
-      Conversation,
-      {
-        where: { id: conversationId },
-        relations: ['project'],
-      }
-    );
+    const conversation = await this.entityManager.findOne(Conversation, {
+      where: { id: conversationId },
+      relations: ['project'],
+    });
 
     if (!conversation || conversation.project.userId !== user.id) {
       throw new ForbiddenException('Access to this conversation is denied.');
     }
 
-    const qb = this.messageRepository
-      .createQueryBuilder('message')
+    const qb = this.entityManager
+      .createQueryBuilder(Message, 'message')
       .where('message.conversationId = :conversationId', { conversationId });
 
     if (cursor) {
@@ -133,9 +136,9 @@ export class MessageService {
     }
 
     return {
-      data: messages,
+      data: messages.reverse(), // Hiển thị tin nhắn cũ nhất trước
       hasNextPage,
-      nextCursor: hasNextPage ? messages[messages.length - 1].id : null,
+      nextCursor: hasNextPage ? messages[0].id : null,
     };
   }
 }

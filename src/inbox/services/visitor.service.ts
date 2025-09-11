@@ -1,16 +1,12 @@
 // src/inbox/services/visitor.service.ts
 
 import { Injectable } from '@nestjs/common';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { Visitor } from '../entities/visitor.entity';
-import { InjectRepository } from '@nestjs/typeorm';
 
 @Injectable()
 export class VisitorService {
-  constructor(
-    @InjectRepository(Visitor)
-    private readonly visitorRepository: Repository<Visitor>
-  ) {}
+  constructor(private readonly entityManager: EntityManager) {}
 
   /**
    * Finds an existing visitor by their unique UID or creates a new one if not found.
@@ -25,9 +21,7 @@ export class VisitorService {
     visitorUid: string,
     manager: EntityManager
   ): Promise<Visitor> {
-    const visitorRepo = manager.getRepository(Visitor);
-
-    let visitor = await visitorRepo.findOne({
+    let visitor = await manager.findOne(Visitor, {
       where: { visitorUid },
     });
 
@@ -35,17 +29,17 @@ export class VisitorService {
       // Generate a user-friendly display name for new visitors
       const displayName = `Visitor #${visitorUid.substring(0, 6)}`;
 
-      visitor = visitorRepo.create({
+      visitor = manager.create(Visitor, {
         projectId,
         visitorUid,
         displayName,
         lastSeenAt: new Date(),
       });
-      await visitorRepo.save(visitor);
+      await manager.save(visitor);
     } else {
       // Update last seen timestamp for returning visitors
       visitor.lastSeenAt = new Date();
-      await visitorRepo.save(visitor);
+      await manager.save(visitor);
     }
 
     return visitor;
@@ -59,7 +53,7 @@ export class VisitorService {
    * @returns The Visitor entity or null if not found.
    */
   async findByUid(visitorUid: string): Promise<Visitor | null> {
-    return this.visitorRepository.findOne({
+    return this.entityManager.findOne(Visitor, {
       where: { visitorUid },
     });
   }

@@ -40,7 +40,6 @@ export class SqsService implements OnModuleInit {
     });
   }
 
-  // Sử dụng lifecycle hook để lấy URL của hàng đợi khi module khởi tạo
   async onModuleInit() {
     try {
       const command = new GetQueueUrlCommand({ QueueName: this.queueName });
@@ -56,7 +55,6 @@ export class SqsService implements OnModuleInit {
     }
   }
 
-  // Phương thức sendMessage giờ đây không cần truyền URL nữa
   async sendMessage(payload: any): Promise<string> {
     const eventId = randomUUID();
 

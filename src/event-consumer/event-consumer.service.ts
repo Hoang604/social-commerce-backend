@@ -9,6 +9,7 @@ import { VisitorService } from '../inbox/services/visitor.service';
 import { MessageService } from '../inbox/services/message.service';
 import { LIVE_CHAT_EVENTS_QUEUE } from './event-consumer.module';
 import { MessageStatus } from '../inbox/entities/message.entity';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class EventConsumerService {
@@ -18,7 +19,8 @@ export class EventConsumerService {
     private readonly conversationService: ConversationService,
     private readonly visitorService: VisitorService,
     private readonly messageService: MessageService,
-    private readonly entityManager: EntityManager
+    private readonly entityManager: EntityManager,
+    private readonly eventEmitter: EventEmitter2
   ) {}
 
   @SqsMessageHandler(LIVE_CHAT_EVENTS_QUEUE)
@@ -49,12 +51,14 @@ export class EventConsumerService {
   }
 
   private async handleNewMessageFromVisitor(payload: {
+    content: string;
     visitorUid: string;
     projectId: number;
-    text: string;
     socketId: string;
   }) {
-    const { visitorUid, projectId, text } = payload;
+    const { visitorUid, projectId, content } = payload;
+
+    const savedMessage = null;
 
     await this.entityManager.transaction(async (manager) => {
       const visitor = await this.visitorService.findOrCreateByUid(
@@ -70,10 +74,10 @@ export class EventConsumerService {
           manager
         );
 
-      await this.messageService.createMessage(
+      const savedMessage = await this.messageService.createMessage(
         {
           conversationId: conversation.id,
-          content: text,
+          content: content,
           senderId: visitor.visitorUid,
           recipientId: `project_${projectId}`,
           fromCustomer: true,
@@ -84,10 +88,16 @@ export class EventConsumerService {
 
       await this.conversationService.updateLastMessage(
         conversation.id,
-        text,
+        content,
         new Date(),
         manager
       );
     });
+    if (savedMessage) {
+      this.eventEmitter.emit('message.created', savedMessage);
+    } else {
+      this.logger.error('Failed to save message from visitor.');
+      throw new Error('Failed to save message from visitor.');
+    }
   }
 }

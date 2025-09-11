@@ -14,6 +14,7 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetCurrentUser } from '../common/decorators/get-current-user.decorator';
 import { User } from '../user/entities/user.entity';
+import { WidgetSettingsDto } from './dto/widget-settings.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('/api/v1/projects')
@@ -40,5 +41,18 @@ export class ProjectController {
     @GetCurrentUser() user: User
   ) {
     return this.projectService.update(id, updateProjectDto, user.id);
+  }
+
+  @Patch(':id/widget-settings')
+  updateWidgetSettings(
+    @Param('id', ParseIntPipe) id: number,
+    @GetCurrentUser() user: User,
+    @Body() widgetSettingsDto: WidgetSettingsDto
+  ) {
+    return this.projectService.updateWidgetSettings(
+      id,
+      user.id,
+      widgetSettingsDto
+    );
   }
 }

@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { Conversation } from '../../inbox/entities/conversation.entity';
+import { WidgetSettingsDto } from '../dto/widget-settings.dto';
 
 @Entity('projects')
 export class Project {
@@ -32,7 +33,7 @@ export class Project {
   siteUrl?: string;
 
   @Column({ type: 'jsonb', default: {} })
-  widgetSettings: object;
+  widgetSettings: WidgetSettingsDto;
 
   @Column({
     type: 'text',

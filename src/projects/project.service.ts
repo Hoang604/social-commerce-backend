@@ -1,34 +1,35 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { Project } from './entities/project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import { WidgetSettingsDto } from './dto/widget-settings.dto';
 
 @Injectable()
 export class ProjectService {
-  constructor(
-    @InjectRepository(Project)
-    private readonly projectRepository: Repository<Project>
-  ) {}
+  constructor(private readonly entityManager: EntityManager) {}
 
   async create(
     createProjectDto: CreateProjectDto,
     userId: string
   ): Promise<Project> {
-    const project = this.projectRepository.create({
-      ...createProjectDto,
-      userId,
-    });
-    return this.projectRepository.save(project);
+    return this.entityManager.transaction(
+      async (transactionalEntityManager) => {
+        const project = transactionalEntityManager.create(Project, {
+          ...createProjectDto,
+          userId,
+        });
+        return transactionalEntityManager.save(project);
+      }
+    );
   }
 
   async findAllForUser(userId: string): Promise<Project[]> {
-    return this.projectRepository.find({ where: { userId } });
+    return this.entityManager.find(Project, { where: { userId } });
   }
 
   async findOne(id: number, userId: string): Promise<Project> {
-    const project = await this.projectRepository.findOneBy({ id });
+    const project = await this.entityManager.findOneBy(Project, { id });
     if (!project || project.userId !== userId) {
       throw new ForbiddenException('Access to this project is denied.');
     }
@@ -40,48 +41,69 @@ export class ProjectService {
     updateProjectDto: UpdateProjectDto,
     userId: string
   ): Promise<Project> {
-    const project = await this.findOne(id, userId); // Ownership check
-    const updated = await this.projectRepository.save({
-      ...project,
-      ...updateProjectDto,
-    });
-    return updated;
+    return this.entityManager.transaction(
+      async (transactionalEntityManager) => {
+        const project = await transactionalEntityManager.findOneBy(Project, {
+          id,
+        });
+        if (!project || project.userId !== userId) {
+          throw new ForbiddenException('Access to this project is denied.');
+        }
+        const updated = await transactionalEntityManager.save(Project, {
+          ...project,
+          ...updateProjectDto,
+        });
+        return updated;
+      }
+    );
   }
   public async getWidgetSettings(
     id: number,
     origin: string | undefined
   ): Promise<{ primaryColor: string; welcomeMessage: string } | null> {
-    const project = await this.projectRepository.findOneBy({ id });
+    const project = await this.entityManager.findOneBy(Project, { id });
 
     if (!project) {
-      return null; // Không tìm thấy project
+      return null;
     }
 
-    // Logic kiểm tra domain vẫn giữ nguyên
     if (project.whitelistedDomains && project.whitelistedDomains.length > 0) {
       if (origin) {
         const originUrl = new URL(origin);
         const originDomain = originUrl.hostname;
         if (!project.whitelistedDomains.includes(originDomain)) {
-          return null; // Origin không được phép
+          return null;
         }
       } else {
-        return null; // Nếu có whitelist, bắt buộc phải có origin
+        return null;
       }
     }
 
-    // SỬA LỖI: Truy cập vào các thuộc tính lồng trong widgetSettings
-    // Giả định rằng widgetSettings có kiểu { primaryColor: string, welcomeMessage: string }
     const settings = project.widgetSettings as {
       primaryColor?: string;
       welcomeMessage?: string;
     };
 
     return {
-      primaryColor: settings?.primaryColor || '#1a73e8', // Cung cấp giá trị mặc định
+      primaryColor: settings?.primaryColor || '#1a73e8',
       welcomeMessage:
         settings?.welcomeMessage ||
-        'Chào bạn, chúng tôi có thể giúp gì cho bạn?', // Cung cấp giá trị mặc định
+        'Chào bạn, chúng tôi có thể giúp gì cho bạn?',
     };
+  }
+
+  async updateWidgetSettings(
+    id: number,
+    userId: string,
+    settingsDto: WidgetSettingsDto
+  ): Promise<Project> {
+    const project = await this.findOne(id, userId);
+
+    project.widgetSettings = {
+      ...project.widgetSettings,
+      ...settingsDto,
+    };
+
+    return this.entityManager.save(project);
   }
 }
