@@ -15,6 +15,9 @@ import { TwoFactorAuthenticationController } from './2fa/two-factor-authenticati
 import { TwoFactorAuthenticationService } from './2fa/two-factor-authentication.service';
 import { EncryptionService } from 'src/common/services/encryption.service';
 import { TwoFactorAuthenticationStrategy } from './strategies/2fa-partial-token.strategy';
+import { User } from 'src/user/entities/user.entity';
+import { UserIdentity } from './entities/user-identity.entity';
+import { GoogleStrategy } from './strategies/google.strategy';
 
 @Module({
   imports: [
@@ -39,6 +42,7 @@ import { TwoFactorAuthenticationStrategy } from './strategies/2fa-partial-token.
     TwoFactorAuthenticationService,
     LocalStrategy,
     JwtStrategy,
+    GoogleStrategy,
     TwoFactorAuthenticationStrategy,
     RefreshTokenStrategy,
     EncryptionService,

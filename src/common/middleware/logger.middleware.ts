@@ -11,10 +11,19 @@ export class LoggerMiddleware implements NestMiddleware {
     const userAgent = request.get('user-agent') || '';
 
     const oldSend = response.send;
+    const oldJson = response.json;
     let responseBody: any;
+
+    // Intercept response.send
     response.send = function (data) {
       responseBody = data;
       return oldSend.apply(response, arguments);
+    };
+
+    // Intercept response.json
+    response.json = function (data) {
+      responseBody = data;
+      return oldJson.apply(response, arguments);
     };
 
     response.on('finish', () => {
@@ -23,9 +32,22 @@ export class LoggerMiddleware implements NestMiddleware {
 
       let responseBodyFormatted: any;
       try {
-        responseBodyFormatted = JSON.parse(responseBody);
+        // If responseBody is a string, try to parse it as JSON
+        if (typeof responseBody === 'string') {
+          responseBodyFormatted = JSON.parse(responseBody);
+        } else if (responseBody !== undefined) {
+          // If it's already an object, use it directly
+          responseBodyFormatted = responseBody;
+        } else {
+          // If responseBody is undefined, check if it's a redirect or empty response
+          responseBodyFormatted =
+            statusCode >= 300 && statusCode < 400
+              ? 'Redirect response'
+              : 'Empty response';
+        }
       } catch (e) {
-        responseBodyFormatted = responseBody;
+        // If parsing fails, use the raw responseBody
+        responseBodyFormatted = responseBody || 'Unable to parse response body';
       }
 
       // Log chi tiết request và response
@@ -34,13 +56,13 @@ export class LoggerMiddleware implements NestMiddleware {
 Request: ${method} ${originalUrl} from ${ip}
 User-Agent: ${userAgent}
 Headers: ${JSON.stringify(headers, null, 2)}
-Body: ${JSON.stringify(body, null, 2)}
+Body: ${body ? JSON.stringify(body, null, 2) : 'No body'}
 --------------------------------------------------
 Response:
 Status: ${statusCode}
-Content-Length: ${contentLength}
+Content-Length: ${contentLength || 'Unknown'}
 Headers: ${JSON.stringify(response.getHeaders(), null, 2)}
-Body: ${JSON.stringify(responseBodyFormatted, null, 2)}
+Body: ${responseBodyFormatted ? JSON.stringify(responseBodyFormatted, null, 2) : 'No response body'}
 --------------------------------------------------`;
 
       if (statusCode >= 400) {

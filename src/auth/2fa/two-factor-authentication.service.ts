@@ -1,18 +1,12 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { authenticator } from 'otplib';
 import { User } from '../../user/entities/user.entity';
-import { UserService } from '../../user/user.service';
 import { toDataURL } from 'qrcode';
-import { EncryptionService } from '../../common/services/encryption.service';
 
 @Injectable()
 export class TwoFactorAuthenticationService {
-  constructor(
-    private readonly userService: UserService,
-    private readonly configService: ConfigService,
-    private readonly encryptionService: EncryptionService
-  ) {}
+  constructor(private readonly configService: ConfigService) {}
 
   public async generateSecret(
     user: User

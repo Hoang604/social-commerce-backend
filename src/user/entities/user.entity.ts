@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { TwoFactorRecoveryCode } from '../../auth/entities/two-factor-recovery-code.entity';
 import { Project } from 'src/projects/entities/project.entity';
+import { UserIdentity } from 'src/auth/entities/user-identity.entity';
 
 export enum UserStatus {
   ACTIVE = 'active',
@@ -70,6 +71,9 @@ export class User {
 
   @OneToMany(() => Project, (project) => project.user)
   projects: Project[];
+
+  @OneToMany(() => UserIdentity, (identity) => identity.user)
+  identities: UserIdentity[];
 
   // --- Nhóm 5: Dấu vết Thời gian ---
   @CreateDateColumn({ type: 'timestamptz' })

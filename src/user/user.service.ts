@@ -295,7 +295,6 @@ export class UserService {
       return true;
     }
 
-    // If after checking all tokens, no match was found, the token is invalid.
     return false;
   }
 

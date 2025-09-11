@@ -1,22 +1,21 @@
-// src/redis/redis.module.ts
+// filepath: src/redis/redis.module.ts
 import { Module, Global } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { createClient } from 'redis';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 
 export const REDIS_CLIENT = 'REDIS_CLIENT';
 
-@Global() // Make Redis client available globally
+@Global()
 @Module({
-  imports: [ConfigModule],
   providers: [
     {
       provide: REDIS_CLIENT,
-      useFactory: async (configService: ConfigService) => {
-        const client = createClient({
-          url: configService.get<string>('REDIS_URL'),
+      useFactory: (configService: ConfigService) => {
+        return new Redis({
+          host: configService.get<string>('REDIS_HOST', 'localhost'),
+          port: configService.get<number>('REDIS_PORT', 6379),
+          // Thêm các cấu hình khác nếu cần
         });
-        await client.connect();
-        return client;
       },
       inject: [ConfigService],
     },

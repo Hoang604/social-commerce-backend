@@ -15,12 +15,10 @@ export class EncryptionService {
   private readonly authTagLength = 16;
 
   constructor(private readonly configService: ConfigService) {
-    const secretKey = this.configService.get<string>(
-      'PAGE_TOKEN_ENCRYPTION_KEY'
-    );
+    const secretKey = this.configService.get<string>('ENCRYPTION_KEY');
     if (!secretKey || secretKey.length !== 32) {
       throw new Error(
-        'PAGE_TOKEN_ENCRYPTION_KEY must be defined in .env and be 32 characters long.'
+        'ENCRYPTION_KEY must be defined in .env and be 32 characters long.'
       );
     }
     this.key = Buffer.from(secretKey, 'utf-8');

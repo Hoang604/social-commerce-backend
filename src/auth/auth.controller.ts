@@ -9,6 +9,7 @@ import {
   Get,
   Res,
   UnauthorizedException,
+  Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -209,19 +210,19 @@ export class AuthController {
   ) {
     await this.authService.logoutAll(req.user.sub);
     response.clearCookie('refresh_token');
-    response.clearCookie('2fa_secret'); // ← Thêm dòng này
-    response.clearCookie('2fa_partial_token'); // ← Thêm dòng này
+    response.clearCookie('2fa_secret');
+    response.clearCookie('2fa_partial_token');
     return { message: 'Đã đăng xuất khỏi tất cả các thiết bị.' };
   }
 
-  @Get('facebook')
-  @UseGuards(AuthGuard('facebook'))
-  async facebookLogin(): Promise<any> {
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  async googleAuth() {
     return HttpStatus.OK;
   }
 
   /**
-   * Callback for Facebook login
+   * Callback for Google login
    * @param req the request object containing user information
    * @param response the response object to set cookies or redirect
    * @returns Promise<void>
@@ -230,45 +231,44 @@ export class AuthController {
    * If 2FA is not enabled, generates a one-time code and redirects to FRONTEND_AUTH_CALLBACK_URL with the code as a query parameter
    */
 
-  @Get('facebook/callback')
-  @UseGuards(AuthGuard('facebook'))
-  async facebookLoginCallback(
-    @Request() req,
-    @Res({ passthrough: true }) response: Response
-  ) {
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  async googleAuthRedirect(@Request() req, @Res() res: Response) {
     const user = req.user as User;
     if (!user) {
-      throw new UnauthorizedException('Could not authenticate with Facebook.');
+      throw new UnauthorizedException('Could not authenticate with Google.');
     }
 
     if (user.isTwoFactorAuthenticationEnabled) {
       const { accessToken } = await this.authService.generate2FAPartialToken(
         user.id
       );
-      console.log('Generated 2FA partial token:', accessToken);
-      response.cookie('2fa_partial_token', accessToken, {
+      res.cookie('2fa_partial_token', accessToken, {
         httpOnly: true,
         secure: this.configService.get('NODE_ENV') === 'production',
         sameSite:
           this.configService.get('NODE_ENV') === 'production' ? 'none' : 'lax',
-        expires: new Date(Date.now() + 5 * 60 * 1000),
+        expires: new Date(Date.now() + 5 * 60 * 1000), // 5 minutes
       });
       const twoFactorUrl = this.configService.get<string>('FRONTEND_2FA_URL');
       if (!twoFactorUrl) {
-        throw new Error('FRONTEND_2FA_URL is not defined');
+        throw new Error('Missing FRONTEND_2FA_URL environment variable.');
       }
-      response.redirect(twoFactorUrl);
-    } else {
+      return res.redirect(twoFactorUrl);
+    }
+    // Logic không có 2FA
+    else {
       const code = await this.authService.generateOneTimeCode(user.id);
       const frontendCallbackUrl = this.configService.get<string>(
         'FRONTEND_AUTH_CALLBACK_URL'
       );
       if (!frontendCallbackUrl) {
-        throw new Error('FRONTEND_AUTH_CALLBACK_URL is not defined');
+        throw new Error(
+          'Missing FRONTEND_AUTH_CALLBACK_URL environment variable.'
+        );
       }
-
       const redirectUrl = `${frontendCallbackUrl}?code=${code}`;
-      response.redirect(redirectUrl);
+      return res.redirect(redirectUrl);
     }
   }
 
@@ -286,6 +286,10 @@ export class AuthController {
         req.headers['user-agent']
       );
 
+    console.log('Exchanging code for tokens, user:', user);
+    console.log('Access Token:', accessToken);
+    console.log('Refresh Token:', refreshToken);
+
     response.cookie('refresh_token', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -295,6 +299,6 @@ export class AuthController {
       ),
     });
 
-    response.json({ accessToken, user });
+    return { accessToken, user };
   }
 }

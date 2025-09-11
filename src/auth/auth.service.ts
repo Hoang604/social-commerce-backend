@@ -13,9 +13,11 @@ import { RegisterDto } from './dto/register.dto';
 import { User, UserStatus } from '../user/entities/user.entity';
 import { ConfigService } from '@nestjs/config';
 import { RefreshToken } from './entities/refresh-token.entity';
-import { EntityManager } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { type Cache } from 'cache-manager';
+import { InjectRepository } from '@nestjs/typeorm';
+import { UserIdentity } from './entities/user-identity.entity';
 
 @Injectable()
 export class AuthService {
@@ -111,7 +113,11 @@ export class AuthService {
     user: User,
     ipAddress?: string,
     userAgent?: string
-  ) {
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    user: Omit<User, 'passwordHash'>;
+  }> {
     const tokens = await this._generateTokens(user.id, user.email);
 
     const liveTime =
@@ -251,6 +257,64 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  /**
+   * Validates a user from an OAuth provider.
+   * 1. Finds an existing identity.
+   * 2. If not found, tries to link to an existing user by email.
+   * 3. If no user found, creates a new user and identity.
+   */
+  async validateOAuthUser(profile: {
+    provider: string;
+    providerId: string;
+    email: string;
+    name: string;
+    avatarUrl: string;
+  }): Promise<User> {
+    // Bọc toàn bộ logic trong một transaction để đảm bảo tính toàn vẹn dữ liệu
+    return this.entityManager.transaction(async (entityManager) => {
+      const existingIdentity = await entityManager.findOne(UserIdentity, {
+        where: { provider: profile.provider, providerId: profile.providerId },
+        relations: ['user'],
+      });
+
+      // 1. User đã tồn tại với provider này
+      if (existingIdentity) {
+        return existingIdentity.user;
+      }
+
+      // 2. Liên kết với tài khoản đã có cùng email
+      let user = await entityManager.findOne(User, {
+        where: { email: profile.email },
+      });
+
+      if (user) {
+        // Cập nhật avatar nếu chưa có
+        if (!user.avatarUrl) {
+          user.avatarUrl = profile.avatarUrl;
+          await entityManager.save(user);
+        }
+      } else {
+        // 3. Tạo mới hoàn toàn user
+        user = entityManager.create(User, {
+          email: profile.email,
+          fullName: profile.name,
+          avatarUrl: profile.avatarUrl,
+        });
+        await entityManager.save(user);
+      }
+
+      // Tạo định danh mới cho user
+      const newIdentity = entityManager.create(UserIdentity, {
+        provider: profile.provider,
+        providerId: profile.providerId,
+        user: user, // Gán trực tiếp đối tượng User
+      });
+      await entityManager.save(newIdentity);
+
+      return user;
+    });
+  }
+
   async generateOneTimeCode(userId: string): Promise<string> {
     const code = crypto.randomBytes(32).toString('hex');
     const key = `one-time-code:${code}`;
@@ -258,12 +322,23 @@ export class AuthService {
 
     // Lưu key-value vào Redis với thời gian hết hạn (TTL) là 5 phút
     await this.cacheManager.set(key, userId, fiveMinutesInMs);
+    console.log('Storing one-time code in Redis with key:', key);
 
+    const userid = await this.cacheManager.get<string>(key);
+    console.log('Retrieved userId from Redis for key:', key, 'userId:', userid);
     return code;
   }
 
   // [B] Sửa hàm exchangeCodeForTokens
-  async exchangeCodeForTokens(code: string, ip: string, userAgent: string) {
+  async exchangeCodeForTokens(
+    code: string,
+    ip: string,
+    userAgent: string
+  ): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    user: Omit<User, 'passwordHash'>;
+  }> {
     const key = `one-time-code:${code}`;
 
     // 1. Lấy userId từ Redis bằng key
@@ -271,7 +346,9 @@ export class AuthService {
 
     // 2. Xác thực mã
     if (!userId) {
-      throw new UnauthorizedException('Invalid or expired code.');
+      throw new UnauthorizedException(
+        `No user found with key ${key}, invalid or expired code.`
+      );
     }
     console.log('One-time code valid for userId:', userId);
     // 3. Vô hiệu hóa mã ngay lập tức bằng cách xóa nó khỏi Redis

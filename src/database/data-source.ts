@@ -10,6 +10,7 @@ import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import * as dotenv from 'dotenv';
 import { ConfigService } from '@nestjs/config';
 import { TwoFactorRecoveryCode } from 'src/auth/entities/two-factor-recovery-code.entity';
+import { UserIdentity } from 'src/auth/entities/user-identity.entity';
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ export const AppDataSource = new DataSource({
     Visitor,
     Project,
     TwoFactorRecoveryCode,
+    UserIdentity,
   ],
   migrations: ['src/database/migrations/*.ts'],
   namingStrategy: new SnakeNamingStrategy(),

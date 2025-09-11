@@ -19,7 +19,8 @@ import { RawBodyMiddleware } from './common/middleware/raw-body.middleware';
 import { CommonModule } from './common/common.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-redis-store';
-import { RedisModule } from './redis/redis.module';
+import { REDIS_CLIENT, RedisModule } from './redis/redis.module';
+import { RedisClientType } from 'redis';
 
 @Module({
   imports: [
@@ -27,11 +28,17 @@ import { RedisModule } from './redis/redis.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    CacheModule.register({
+    CacheModule.registerAsync({
       isGlobal: true,
-      store: redisStore,
-      host: 'localhost',
-      port: 6379,
+      imports: [RedisModule], // Import RedisModule để có thể inject provider của nó
+      useFactory: async (redisClient: RedisClientType) => {
+        return {
+          store: redisStore,
+          // @ts-ignore
+          client: redisClient,
+        };
+      },
+      inject: [REDIS_CLIENT], // Inject Redis client đã được tạo ở RedisModule
     }),
 
     EventEmitterModule.forRoot(),
