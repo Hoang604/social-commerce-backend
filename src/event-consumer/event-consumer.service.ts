@@ -1,30 +1,97 @@
 // src/event-consumer/event-consumer.service.ts
 
-import { Injectable, Logger } from '@nestjs/common';
-import { SqsMessageHandler } from '@ssut/nestjs-sqs';
-import type { Message as SqsMessage } from 'aws-sdk/clients/sqs';
+
+// src/event-consumer/event-consumer.service.ts
+
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { ConversationService } from '../inbox/services/conversation.service';
 import { VisitorService } from '../inbox/services/visitor.service';
 import { MessageService } from '../inbox/services/message.service';
-import { LIVE_CHAT_EVENTS_QUEUE } from './event-consumer.module';
 import { MessageStatus } from '../inbox/entities/message.entity';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+  SQSClient,
+  ReceiveMessageCommand,
+  DeleteMessageCommand,
+  GetQueueUrlCommand,
+  Message,
+} from '@aws-sdk/client-sqs';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
-export class EventConsumerService {
+export class EventConsumerService implements OnApplicationBootstrap {
   private readonly logger = new Logger(EventConsumerService.name);
+  private queueUrl: string;
+  private readonly queueName: string;
 
   constructor(
     private readonly conversationService: ConversationService,
     private readonly visitorService: VisitorService,
     private readonly messageService: MessageService,
     private readonly entityManager: EntityManager,
-    private readonly eventEmitter: EventEmitter2
-  ) {}
+    private readonly eventEmitter: EventEmitter2,
+    private readonly sqs: SQSClient,
+    private readonly configService: ConfigService
+  ) {
+    this.queueName = this.configService.get<string>(
+      'AWS_SQS_QUEUE_NAME'
+    ) as string;
+  }
 
-  @SqsMessageHandler(LIVE_CHAT_EVENTS_QUEUE)
-  public async handleMessage(message: SqsMessage) {
+  async onApplicationBootstrap() {
+    this.logger.log(
+      'Application has fully started. Initializing SQS consumer...'
+    );
+    try {
+      const command = new GetQueueUrlCommand({ QueueName: this.queueName });
+      const response = await this.sqs.send(command);
+      this.queueUrl = response.QueueUrl as string;
+      this.logger.log(`Successfully connected to SQS queue: ${this.queueUrl}`);
+      this.startPolling();
+    } catch (error) {
+      this.logger.error(
+        `Could not get SQS queue URL for ${this.queueName}. Please ensure the queue exists.`,
+        error.stack
+      );
+      throw error;
+    }
+  }
+
+  private startPolling() {
+    this.logger.log('Starting SQS polling...');
+    // eslint-disable-next-line no-constant-condition
+    const poll = async () => {
+      while (true) {
+        try {
+          const receiveCommand = new ReceiveMessageCommand({
+            QueueUrl: this.queueUrl,
+            MaxNumberOfMessages: 10,
+            WaitTimeSeconds: 20,
+          });
+          const { Messages } = await this.sqs.send(receiveCommand);
+
+          if (Messages) {
+            this.logger.log(`Received ${Messages.length} messages.`);
+            for (const message of Messages) {
+              await this.handleMessage(message);
+              const deleteCommand = new DeleteMessageCommand({
+                QueueUrl: this.queueUrl,
+                ReceiptHandle: message.ReceiptHandle,
+              });
+              await this.sqs.send(deleteCommand);
+            }
+          }
+        } catch (error) {
+          this.logger.error('Error polling SQS:', error);
+        }
+      }
+    };
+
+    poll();
+  }
+
+  public async handleMessage(message: Message) {
     this.logger.log(`Received SQS message: ${message.MessageId}`);
     try {
       if (!message.Body) {
@@ -67,7 +134,7 @@ export class EventConsumerService {
       const visitor = await this.visitorService.findOrCreateByUid(
         projectId,
         visitorUid,
-        manager,
+        manager
       );
       this.logger.log(`[Transaction] Found or created visitor: ${visitor.id}`);
 
@@ -75,10 +142,10 @@ export class EventConsumerService {
         await this.conversationService.findOrCreateByVisitorId(
           projectId,
           visitor.id,
-          manager,
+          manager
         );
       this.logger.log(
-        `[Transaction] Found or created conversation: ${conversation.id}`,
+        `[Transaction] Found or created conversation: ${conversation.id}`
       );
 
       savedMessage = await this.messageService.createMessage(
@@ -90,7 +157,7 @@ export class EventConsumerService {
           fromCustomer: true,
           status: MessageStatus.SENT,
         },
-        manager,
+        manager
       );
       this.logger.log(`[Transaction] Created message: ${savedMessage.id}`);
 
@@ -98,14 +165,16 @@ export class EventConsumerService {
         conversation.id,
         content,
         new Date(),
-        manager,
+        manager
       );
       this.logger.log(
-        `[Transaction] Updated last message for conversation: ${conversation.id}`,
+        `[Transaction] Updated last message for conversation: ${conversation.id}`
       );
     });
     if (savedMessage) {
-      this.logger.log(`Emitting message.created event for message: ${savedMessage.id}`);
+      this.logger.log(
+        `Emitting message.created event for message: ${savedMessage.id}`
+      );
       this.eventEmitter.emit('message.created', savedMessage);
     } else {
       this.logger.error('Failed to save message from visitor.');
@@ -113,3 +182,4 @@ export class EventConsumerService {
     }
   }
 }
+

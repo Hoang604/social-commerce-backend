@@ -53,7 +53,7 @@ import { RedisClientType } from 'redis';
         database: configService.get<string>('psql_database') || 'your_database',
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         namingStrategy: new SnakeNamingStrategy(),
-        synchronize: true,
+        synchronize: false,
       }),
     }),
     HttpModule.register({

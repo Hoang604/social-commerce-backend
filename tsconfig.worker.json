@@ -3,6 +3,6 @@
   "compilerOptions": {
     "outDir": "./dist"
   },
-  "include": ["src/worker.ts", "src/webhook-processor/**/*", "src/inbox/**/*"],
+  "include": ["src/worker.ts", "src/**/*"],
   "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
 }

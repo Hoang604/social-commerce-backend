@@ -10,7 +10,8 @@
     "build:worker": "nest build --config nest-cli.json --path tsconfig.worker.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
-    "dev": "nest start --watch",
+    "dev:start": "nest start --watch",
+    "dev:worker": "nest start worker --watch",
     "start:debug": "nest start --debug --watch",
     "start:worker": "node dist/worker.js",
     "start:prod": "node dist/main",
@@ -26,7 +27,7 @@
     "migration:revert": "npm run typeorm -- migration:revert"
   },
   "dependencies": {
-    "@aws-sdk/client-sqs": "^3.873.0",
+    "@aws-sdk/client-sqs": "^3.888.0",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/cache-manager": "^3.0.1",
     "@nestjs/common": "^11.0.1",
@@ -41,7 +42,6 @@
     "@nestjs/typeorm": "^11.0.0",
     "@nestjs/websockets": "^11.1.6",
     "@socket.io/redis-adapter": "^8.3.0",
-    "@ssut/nestjs-sqs": "^3.0.1",
     "aws-sdk": "^2.1692.0",
     "bcrypt": "^6.0.0",
     "cache-manager": "^7.2.0",
