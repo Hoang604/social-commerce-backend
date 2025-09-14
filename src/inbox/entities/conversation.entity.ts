@@ -27,11 +27,11 @@ export class Conversation {
   @ManyToOne(() => Project, (project) => project.conversations, {
     onDelete: 'SET NULL',
   })
-  @Column({ type: 'bigint', name: 'project_id' })
-  projectId: number;
-
   @JoinColumn({ name: 'project_id' })
   project: Project;
+
+  @Column({ type: 'bigint', name: 'project_id' })
+  projectId: number;
 
   @ManyToOne(() => Visitor, (visitor) => visitor.conversations, {
     onDelete: 'SET NULL',

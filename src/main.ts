@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import { json } from 'body-parser';
 import { RedisIoAdapter } from './gateway/redis-io.adapter';
 import { ConfigService } from '@nestjs/config';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -16,7 +17,7 @@ async function bootstrap() {
   app.enableCors({
     origin: configService.get<string>('FRONTEND_URL', 'http://localhost:5173'), // URL của frontend
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true, // Quan trọng để cho phép gửi cookie qua các domain
+    credentials: true,
   });
 
   // Setup Redis Adapter for WebSocket

@@ -17,7 +17,13 @@ import { RealtimeSessionService } from '../realtime-session/realtime-session.ser
 import { OnEvent } from '@nestjs/event-emitter';
 import { type Message } from 'src/inbox/entities/message.entity';
 
-@WebSocketGateway({ cors: true })
+@WebSocketGateway({
+  cors: {
+    origin: ['https://app.dinhviethoang604.id.vn', 'http://localhost:5173'],
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+})
 export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
@@ -99,7 +105,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await this.sqsService.sendMessage(eventPayload);
   }
 
-  @SubscribeMessage('visitorTyping')
+  @SubscribeMessage('visitorIsTyping')
   handleVisitorTyping(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { isTyping: boolean }

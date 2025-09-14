@@ -68,6 +68,7 @@ export class SqsService implements OnModuleInit {
     try {
       await this.sqs.send(command);
       this.logger.log(`Successfully sent message ${eventId} to SQS.`);
+      this.logger.debug(`Message payload: ${JSON.stringify(payload)}`);
       return eventId;
     } catch (error) {
       this.logger.error(

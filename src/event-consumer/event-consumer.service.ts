@@ -56,25 +56,32 @@ export class EventConsumerService {
     projectId: number;
     socketId: string;
   }) {
+    this.logger.log(`Handling new message from visitor: ${payload.visitorUid}`);
     const { visitorUid, projectId, content } = payload;
 
-    const savedMessage = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let savedMessage: any = null;
 
     await this.entityManager.transaction(async (manager) => {
+      this.logger.log(`[Transaction] Started for visitor: ${visitorUid}`);
       const visitor = await this.visitorService.findOrCreateByUid(
         projectId,
         visitorUid,
-        manager
+        manager,
       );
+      this.logger.log(`[Transaction] Found or created visitor: ${visitor.id}`);
 
       const conversation =
         await this.conversationService.findOrCreateByVisitorId(
           projectId,
           visitor.id,
-          manager
+          manager,
         );
+      this.logger.log(
+        `[Transaction] Found or created conversation: ${conversation.id}`,
+      );
 
-      const savedMessage = await this.messageService.createMessage(
+      savedMessage = await this.messageService.createMessage(
         {
           conversationId: conversation.id,
           content: content,
@@ -83,17 +90,22 @@ export class EventConsumerService {
           fromCustomer: true,
           status: MessageStatus.SENT,
         },
-        manager
+        manager,
       );
+      this.logger.log(`[Transaction] Created message: ${savedMessage.id}`);
 
       await this.conversationService.updateLastMessage(
         conversation.id,
         content,
         new Date(),
-        manager
+        manager,
+      );
+      this.logger.log(
+        `[Transaction] Updated last message for conversation: ${conversation.id}`,
       );
     });
     if (savedMessage) {
+      this.logger.log(`Emitting message.created event for message: ${savedMessage.id}`);
       this.eventEmitter.emit('message.created', savedMessage);
     } else {
       this.logger.error('Failed to save message from visitor.');

@@ -16,7 +16,6 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { EntityManager, Repository } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { type Cache } from 'cache-manager';
-import { InjectRepository } from '@nestjs/typeorm';
 import { UserIdentity } from './entities/user-identity.entity';
 
 @Injectable()

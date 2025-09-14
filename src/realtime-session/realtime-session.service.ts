@@ -13,8 +13,8 @@ export class RealtimeSessionService {
 
   async setVisitorSession(visitorUid: string, socketId: string): Promise<void> {
     const key = this.getKey(visitorUid);
-    // Save with an expiration time of 12 hours (43200 seconds)
-    await this.redis.set(key, socketId, { EX: 43200 });
+    await this.redis.set(key, socketId);
+    await this.redis.expire(key, 43200);
   }
 
   async getVisitorSession(visitorUid: string): Promise<string | null> {
