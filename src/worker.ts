@@ -1,5 +1,3 @@
-// src/worker.ts
-
 import { NestFactory } from '@nestjs/core';
 import { EventConsumerModule } from './event-consumer/event-consumer.module';
 import { Logger } from '@nestjs/common';

@@ -1,11 +1,13 @@
 // src/realtime-session/realtime-session.service.ts
 import { Injectable, Inject } from '@nestjs/common';
 import { type RedisClientType } from 'redis';
-import { REDIS_CLIENT } from '../redis/redis.module';
+import { REDIS_PUBLISHER_CLIENT } from '../redis/redis.module';
 
 @Injectable()
 export class RealtimeSessionService {
-  constructor(@Inject(REDIS_CLIENT) private readonly redis: RedisClientType) {}
+  constructor(
+    @Inject(REDIS_PUBLISHER_CLIENT) private readonly redis: RedisClientType
+  ) {}
 
   private getKey(visitorUid: string): string {
     return `session:visitor:${visitorUid}`;

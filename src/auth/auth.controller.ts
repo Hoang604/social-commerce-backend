@@ -23,7 +23,7 @@ import { ConfigService } from '@nestjs/config';
 import { type ExchangeCodeDto } from './dto/exchange-code.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 
-@Controller('api/v1/auth')
+@Controller('auth')
 export class AuthController {
   private readonly refreshTokenExpiresIn: number;
 
@@ -256,7 +256,7 @@ export class AuthController {
       }
       return res.redirect(twoFactorUrl);
     }
-    // Logic không có 2FA
+    // Logic for non-2FA
     else {
       const code = await this.authService.generateOneTimeCode(user.id);
       const frontendCallbackUrl = this.configService.get<string>(

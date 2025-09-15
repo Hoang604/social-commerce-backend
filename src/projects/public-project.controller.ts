@@ -9,7 +9,7 @@ import {
 import { ProjectService } from './project.service';
 import { type Request } from 'express';
 
-@Controller('/api/v1/public/projects')
+@Controller('public/projects')
 export class PublicProjectController {
   constructor(private readonly projectService: ProjectService) {}
 

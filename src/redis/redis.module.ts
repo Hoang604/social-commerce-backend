@@ -1,25 +1,35 @@
-// filepath: src/redis/redis.module.ts
 import { Module, Global } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
-export const REDIS_CLIENT = 'REDIS_CLIENT';
+// Define Injection Tokens
+export const REDIS_PUBLISHER_CLIENT = 'REDIS_PUBLISHER_CLIENT';
+export const REDIS_SUBSCRIBER_CLIENT = 'REDIS_SUBSCRIBER_CLIENT';
 
 @Global()
 @Module({
   providers: [
     {
-      provide: REDIS_CLIENT,
+      provide: REDIS_PUBLISHER_CLIENT,
       useFactory: (configService: ConfigService) => {
         return new Redis({
           host: configService.get<string>('REDIS_HOST', 'localhost'),
           port: configService.get<number>('REDIS_PORT', 6379),
-          // Thêm các cấu hình khác nếu cần
+        });
+      },
+      inject: [ConfigService],
+    },
+    {
+      provide: REDIS_SUBSCRIBER_CLIENT,
+      useFactory: (configService: ConfigService) => {
+        return new Redis({
+          host: configService.get<string>('REDIS_HOST', 'localhost'),
+          port: configService.get<number>('REDIS_PORT', 6379),
         });
       },
       inject: [ConfigService],
     },
   ],
-  exports: [REDIS_CLIENT],
+  exports: [REDIS_PUBLISHER_CLIENT, REDIS_SUBSCRIBER_CLIENT], // Export both clients
 })
 export class RedisModule {}

@@ -50,7 +50,7 @@ export class LoggerMiddleware implements NestMiddleware {
         responseBodyFormatted = responseBody || 'Unable to parse response body';
       }
 
-      // Log chi tiết request và response
+      // Log detailed request and response
       const logMessage = `
 --------------------------------------------------
 Request: ${method} ${originalUrl} from ${ip}

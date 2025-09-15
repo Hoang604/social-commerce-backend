@@ -24,7 +24,8 @@ export class WsJwtAuthGuard implements CanActivate {
       const authToken = client.handshake.auth?.token;
 
       if (!authToken) {
-        throw new WsException('Unauthorized: No token provided');
+        this.logger.log('Websocket connection from widget');
+        return true;
       }
 
       const payload = await this.jwtService.verifyAsync(authToken);
@@ -37,6 +38,7 @@ export class WsJwtAuthGuard implements CanActivate {
 
       // Important: Attach user payload to the client object
       client.data.user = { id: user.id, email: user.email };
+      this.logger.log(`WebSocket authenticated user: ${user.email}`);
 
       return true;
     } catch (err) {

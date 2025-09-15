@@ -15,7 +15,7 @@ import { User } from './entities/user.entity';
 import { UpdateUserDto } from './dto/update-user-dto';
 import { EmailChangeDto } from './dto/email-change.dto';
 
-@Controller('api/v1/user')
+@Controller('user')
 @UseGuards(JwtAuthGuard)
 export class UserController {
   constructor(private readonly userService: UserService) {}

@@ -26,9 +26,8 @@ export const LIVE_CHAT_EVENTS_QUEUE = 'live-chat-events-queue';
         port: configService.get<number>('psql_port') || 5432,
         username: configService.get<string>('psql_user') || 'hoang',
         password: configService.get<string>('psql_password') || '',
-        database:
-          configService.get<string>('psql_database') || 'your_database',
-        entities: [__dirname + '/**/*.entity{.ts,.js}'],
+        database: configService.get<string>('psql_database') || 'your_database',
+        entities: [__dirname + '/../**/*.entity{.ts,.js}'],
         namingStrategy: new SnakeNamingStrategy(),
         synchronize: false,
       }),

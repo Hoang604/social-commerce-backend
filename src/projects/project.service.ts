@@ -28,6 +28,10 @@ export class ProjectService {
     return this.entityManager.find(Project, { where: { userId } });
   }
 
+  async findByProjectId(projectId: number): Promise<Project | null> {
+    return this.entityManager.findOneBy(Project, { id: projectId });
+  }
+
   async findOne(id: number, userId: string): Promise<Project> {
     const project = await this.entityManager.findOneBy(Project, { id });
     if (!project || project.userId !== userId) {

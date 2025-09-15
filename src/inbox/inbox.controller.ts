@@ -22,7 +22,7 @@ import { GetCurrentUser } from '../common/decorators/get-current-user.decorator'
 import { User } from '../user/entities/user.entity';
 import { AgentTypingDto } from './dto/agent-typing.dto';
 
-@Controller('api/v1/inbox')
+@Controller('inbox')
 @UseGuards(JwtAuthGuard)
 export class InboxController {
   constructor(
@@ -73,7 +73,6 @@ export class InboxController {
     @Param('id', ParseIntPipe) conversationId: number,
     @Query() query: ListMessagesDto
   ) {
-    // SỬA LỖI: Gọi phương thức đã được bổ sung
     return this.messageService.listByConversation(user, conversationId, query);
   }
   @Post('conversations/:id/typing')

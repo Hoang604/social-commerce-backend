@@ -230,14 +230,14 @@ export class ConversationService {
 
   /**
    * @NEW_FEATURE
-   * Xử lý và phát sự kiện "agent đang gõ" tới visitor.
+   * Handles and emits "agent typing" event to the visitor.
    */
   async handleAgentTyping(
     user: User,
     conversationId: number,
     isTyping: boolean
   ): Promise<void> {
-    // Bước 1: Kiểm tra quyền và lấy thông tin visitor
+    // Step 1: Check permissions and get visitor information
     const conversation = await this.entityManager.findOne(Conversation, {
       where: { id: conversationId },
       relations: ['visitor', 'project'],
@@ -249,16 +249,16 @@ export class ConversationService {
 
     const visitorUid = conversation.visitor.visitorUid;
 
-    // Bước 2: Tra cứu socket.id của visitor
+    // Step 2: Look up visitor's socket.id
     const visitorSocketId =
       await this.realtimeSessionService.getVisitorSession(visitorUid);
 
-    // Bước 3: Gửi sự kiện NẾU visitor đang online
+    // Step 3: Send event IF visitor is online
     if (visitorSocketId) {
       this.eventsGateway.sendAgentTypingToVisitor(
         visitorSocketId,
         isTyping,
-        user.fullName || 'Agent' // Sử dụng fullName hoặc một tên mặc định
+        user.fullName || 'Agent' // Use fullName or a default name
       );
     }
   }

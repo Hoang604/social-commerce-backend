@@ -1,17 +1,17 @@
 import { IoAdapter } from '@nestjs/platform-socket.io';
-import { ServerOptions } from 'socket.io';
+import { Server, ServerOptions } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import { ConfigService } from '@nestjs/config';
-import { INestApplication, Logger } from '@nestjs/common'; // Import Logger
-import path from 'path/win32';
+import { INestApplication, Logger } from '@nestjs/common';
+import { ProjectService } from '../projects/project.service';
 
 export class RedisIoAdapter extends IoAdapter {
-  private readonly logger = new Logger(RedisIoAdapter.name); // Tạo một logger instance
+  private readonly logger = new Logger(RedisIoAdapter.name);
   private adapterConstructor: ReturnType<typeof createAdapter>;
 
   constructor(
-    app: INestApplication,
+    private readonly app: INestApplication,
     private readonly configService: ConfigService
   ) {
     super(app);
@@ -29,37 +29,66 @@ export class RedisIoAdapter extends IoAdapter {
 
     try {
       await Promise.all([pubClient.connect(), subClient.connect()]);
-
-      // Nếu kết nối thành công, log ra
       this.logger.log('Successfully connected to Redis.');
-
       this.adapterConstructor = createAdapter(pubClient, subClient);
     } catch (err) {
-      // Nếu có lỗi, log ra và ném lỗi để dừng ứng dụng
       this.logger.error('Failed to connect to Redis:', err);
-      // Ném lỗi sẽ ngăn ứng dụng khởi động với một WebSocket server không hoạt động
       throw err;
     }
   }
 
   createIOServer(port: number, options?: ServerOptions): any {
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
-    this.logger.log(`Configuring CORS for origin: ${frontendUrl}`);
-    options = options || ({} as ServerOptions);
-    options.path = options.path || '/socket.io';
-    this.logger.log(`Socket.IO server listening on path: ${options.path}`);
-
-    const server = super.createIOServer(port, {
+    const server: Server = super.createIOServer(port, {
       ...options,
       cors: {
-        origin: frontendUrl,
+        origin: true,
         methods: ['GET', 'POST'],
         credentials: true,
       },
     });
 
     server.adapter(this.adapterConstructor);
-    this.logger.log('Socket.IO server created with Redis adapter.');
+
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL');
+    const projectService = this.app.get(ProjectService);
+    const logger = this.logger;
+
+    server.use(async (socket, next) => {
+      const origin = socket.handshake.headers.origin;
+      if (!origin) {
+        return next();
+      }
+
+      if (origin === frontendUrl) {
+        logger.log(`Allowing origin (frontend): ${origin}`);
+        return next();
+      }
+
+      const projectId = socket.handshake.query.projectId;
+
+      if (!projectId || typeof projectId !== 'string') {
+        logger.warn(`Origin ${origin} without projectId blocked.`);
+        return next(new Error('Project ID is missing or invalid.'));
+      }
+
+      const project = await projectService.findByProjectId(+projectId);
+
+      if (
+        project &&
+        project.whitelistedDomains &&
+        project.whitelistedDomains.includes(origin)
+      ) {
+        logger.log(`Allowing origin (widget): ${origin}`);
+        return next();
+      }
+
+      logger.warn(`Origin ${origin} not in whitelist. Blocked.`);
+      return next(new Error('Not allowed by CORS'));
+    });
+
+    this.logger.log(
+      'Socket.IO server created with Redis adapter and CORS middleware.'
+    );
     return server;
   }
 }

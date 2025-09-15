@@ -7,7 +7,7 @@ import { UserService } from '../../user/user.service'; // <-- Import UserService
 interface JwtPayload {
   sub: string;
   email: string;
-  iat: number; // Issued at timestamp (được thêm tự động bởi jwtService.sign)
+  iat: number; // Issued at timestamp (automatically added by jwtService.sign)
 }
 
 @Injectable()

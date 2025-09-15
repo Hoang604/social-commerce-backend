@@ -7,30 +7,30 @@ import { User } from '../../user/entities/user.entity';
 @Injectable()
 export class LocalStrategy extends PassportStrategy(Strategy) {
   constructor(private readonly authService: AuthService) {
-    // Cấu hình cho Passport-local.
-    // Mặc định, nó sẽ tìm các trường 'username' và 'password' trong request body.
-    // Ở đây, chúng ta chỉ định rõ rằng trường username của chúng ta là 'email'.
+    // Configuration for Passport-local.
+    // By default, it will look for 'username' and 'password' fields in the request body.
+    // Here, we explicitly specify that our username field is 'email'.
     super({ usernameField: 'email' });
   }
 
   /**
-   * Passport sẽ tự động gọi hàm validate này khi LocalAuthGuard được kích hoạt.
-   * @param email Giá trị từ trường 'email' trong request body.
-   * @param password Giá trị từ trường 'password' trong request body.
-   * @returns Đối tượng user nếu xác thực thành công.
-   * @throws UnauthorizedException nếu xác thực thất bại.
+   * Passport will automatically call this validate function when LocalAuthGuard is activated.
+   * @param email Value from the 'email' field in the request body.
+   * @param password Value from the 'password' field in the request body.
+   * @returns User object if authentication is successful.
+   * @throws UnauthorizedException if authentication fails.
    */
   async validate(email: string, password: string): Promise<User> {
-    // Ủy quyền việc kiểm tra email và mật khẩu cho AuthService.
+    // Delegate email and password checking to AuthService.
     const user = await this.authService.validateUser(email, password);
 
-    // Nếu AuthService trả về null, nghĩa là thông tin không hợp lệ.
+    // If AuthService returns null, it means the information is invalid.
     if (!user) {
       throw new UnauthorizedException('Email hoặc mật khẩu không chính xác.');
     }
 
-    // Nếu xác thực thành công, trả về toàn bộ đối tượng user.
-    // Passport sẽ tự động gắn đối tượng này vào request.user.
+    // If authentication is successful, return the entire user object.
+    // Passport will automatically attach this object to request.user.
     return user;
   }
 }

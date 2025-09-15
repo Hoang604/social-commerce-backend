@@ -9,7 +9,7 @@ import { ListMessagesDto } from '../dto/list-messages.dto';
 import { Conversation } from '../entities/conversation.entity';
 import { RealtimeSessionService } from 'src/realtime-session/realtime-session.service';
 
-// Định nghĩa lại DTO cho việc tạo tin nhắn, loại bỏ các trường Facebook cũ
+// Redefine DTO for message creation, removing old Facebook fields
 interface CreateMessagePayload {
   conversationId: number;
   content: string;
@@ -53,7 +53,7 @@ export class MessageService {
   ): Promise<Message> {
     const savedMessage = await this.entityManager.transaction(
       async (transactionalEntityManager) => {
-        // Bước 1: Tìm conversation và visitor liên quan
+        // Step 1: Find related conversation and visitor
         const conversation = await transactionalEntityManager.findOne(
           Conversation,
           {
@@ -70,7 +70,7 @@ export class MessageService {
 
         const visitorUid = conversation.visitor.visitorUid;
 
-        // Bước 2: Tạo và lưu tin nhắn vào CSDL
+        // Step 2: Create and save message to DB
         const message = transactionalEntityManager.create(Message, {
           conversation: { id: conversationId },
           content: replyText,
@@ -83,13 +83,13 @@ export class MessageService {
       }
     );
 
-    // Các bước sau không tương tác DB, có thể nằm ngoài transaction
-    // Bước 3: Tra cứu socket.id từ Redis
+    // Subsequent steps do not interact with DB, can be outside transaction
+    // Step 3: Look up socket.id from Redis
     const visitorSocketId = await this.realtimeSessionService.getVisitorSession(
       savedMessage.recipientId
     );
 
-    // Bước 4: Gửi sự kiện real-time và cập nhật trạng thái cuối cùng
+    // Step 4: Send real-time event and update final status
     if (visitorSocketId) {
       this.eventsGateway.sendReplyToVisitor(visitorSocketId, savedMessage);
       savedMessage.status = MessageStatus.SENT;
@@ -97,7 +97,7 @@ export class MessageService {
       savedMessage.status = MessageStatus.DELIVERED;
     }
 
-    // Cập nhật lại trạng thái tin nhắn
+    // Update message status
     return this.entityManager.save(savedMessage);
   }
 
@@ -108,7 +108,7 @@ export class MessageService {
   ): Promise<any> {
     const { limit = 20, cursor } = query;
 
-    // Kiểm tra quyền: Đảm bảo user có quyền truy cập vào conversation này
+    // Permission check: Ensure user has access to this conversation
     const conversation = await this.entityManager.findOne(Conversation, {
       where: { id: conversationId },
       relations: ['project'],
@@ -126,17 +126,17 @@ export class MessageService {
       qb.andWhere('message.id < :cursor', { cursor });
     }
 
-    qb.orderBy('message.createdAt', 'DESC').take(limit + 1); // Lấy thêm 1 để kiểm tra hasNextPage
+    qb.orderBy('message.createdAt', 'DESC').take(limit + 1); // Get 1 more to check hasNextPage
 
     const messages = await qb.getMany();
 
     const hasNextPage = messages.length > limit;
     if (hasNextPage) {
-      messages.pop(); // Bỏ phần tử thừa
+      messages.pop(); // Remove extra element
     }
 
     return {
-      data: messages.reverse(), // Hiển thị tin nhắn cũ nhất trước
+      data: messages.reverse(), // Display oldest messages first
       hasNextPage,
       nextCursor: hasNextPage ? messages[0].id : null,
     };

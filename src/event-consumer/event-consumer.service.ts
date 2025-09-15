@@ -1,15 +1,18 @@
 // src/event-consumer/event-consumer.service.ts
 
-
 // src/event-consumer/event-consumer.service.ts
 
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { ConversationService } from '../inbox/services/conversation.service';
 import { VisitorService } from '../inbox/services/visitor.service';
 import { MessageService } from '../inbox/services/message.service';
 import { MessageStatus } from '../inbox/entities/message.entity';
-import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   SQSClient,
   ReceiveMessageCommand,
@@ -18,6 +21,11 @@ import {
   Message,
 } from '@aws-sdk/client-sqs';
 import { ConfigService } from '@nestjs/config';
+import { type Redis } from 'ioredis';
+import { REDIS_PUBLISHER_CLIENT } from 'src/redis/redis.module';
+
+// Define a constant for the channel name for easier management
+const NEW_MESSAGE_CHANNEL = 'new_message_channel';
 
 @Injectable()
 export class EventConsumerService implements OnApplicationBootstrap {
@@ -30,7 +38,7 @@ export class EventConsumerService implements OnApplicationBootstrap {
     private readonly visitorService: VisitorService,
     private readonly messageService: MessageService,
     private readonly entityManager: EntityManager,
-    private readonly eventEmitter: EventEmitter2,
+    @Inject(REDIS_PUBLISHER_CLIENT) private readonly redisPublisher: Redis,
     private readonly sqs: SQSClient,
     private readonly configService: ConfigService
   ) {
@@ -173,13 +181,15 @@ export class EventConsumerService implements OnApplicationBootstrap {
     });
     if (savedMessage) {
       this.logger.log(
-        `Emitting message.created event for message: ${savedMessage.id}`
+        `Publishing message.created event for message: ${savedMessage.id}`
       );
-      this.eventEmitter.emit('message.created', savedMessage);
+      this.redisPublisher.publish(
+        NEW_MESSAGE_CHANNEL,
+        JSON.stringify(savedMessage)
+      );
     } else {
       this.logger.error('Failed to save message from visitor.');
       throw new Error('Failed to save message from visitor.');
     }
   }
 }
-

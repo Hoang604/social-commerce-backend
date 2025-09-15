@@ -7,6 +7,7 @@ import {
   ConnectedSocket,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { SqsService } from '../event-producer/sqs.service';
@@ -14,17 +15,34 @@ import { ConversationService } from '../inbox/services/conversation.service';
 import { VisitorService } from '../inbox/services/visitor.service';
 import { Logger, Inject, forwardRef } from '@nestjs/common';
 import { RealtimeSessionService } from '../realtime-session/realtime-session.service';
-import { OnEvent } from '@nestjs/event-emitter';
 import { type Message } from 'src/inbox/entities/message.entity';
+import { type Redis } from 'ioredis';
+import { REDIS_SUBSCRIBER_CLIENT } from 'src/redis/redis.module';
+import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
+import { UseGuards } from '@nestjs/common';
 
-@WebSocketGateway({
-  cors: {
-    origin: ['https://app.dinhviethoang604.id.vn', 'http://localhost:5173'],
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
-})
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+const NEW_MESSAGE_CHANNEL = 'new_message_channel';
+
+type MessageStatus = 'sending' | 'sent' | 'failed';
+
+type MessageSender = {
+  type: 'visitor' | 'agent';
+  name?: string;
+};
+
+type MessageFrontend = {
+  id: string | number;
+  content: string;
+  sender: MessageSender;
+  status: MessageStatus;
+  timestamp: string;
+};
+
+@UseGuards(WsJwtAuthGuard)
+@WebSocketGateway()
+export class EventsGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit
+{
   @WebSocketServer()
   server: Server;
 
@@ -36,7 +54,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly conversationService: ConversationService,
     @Inject(forwardRef(() => VisitorService))
     private readonly visitorService: VisitorService,
-    private readonly realtimeSessionService: RealtimeSessionService
+    private readonly realtimeSessionService: RealtimeSessionService,
+    @Inject(REDIS_SUBSCRIBER_CLIENT) private readonly redisSubscriber: Redis
   ) {}
 
   handleConnection(client: Socket) {
@@ -48,6 +67,23 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (client.data.visitorUid) {
       this.realtimeSessionService.deleteVisitorSession(client.data.visitorUid);
     }
+  }
+
+  afterInit() {
+    this.logger.log('Gateway Initialized. Subscribing to Redis channel...');
+    this.redisSubscriber.subscribe(NEW_MESSAGE_CHANNEL, (err) => {
+      if (err) {
+        this.logger.error('Failed to subscribe to Redis channel', err);
+      } else {
+        this.logger.log(`Subscribed successfully to "${NEW_MESSAGE_CHANNEL}"`);
+      }
+    });
+
+    this.redisSubscriber.on('message', (channel, message) => {
+      if (channel === NEW_MESSAGE_CHANNEL) {
+        this.handleNewMessage(message);
+      }
+    });
   }
 
   @SubscribeMessage('identify')
@@ -70,10 +106,30 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       const conversation = await this.conversationService.getHistoryByVisitorId(
         visitor.id
       );
+
       if (conversation) {
+        let messagesForFrontend: MessageFrontend[] = conversation.messages.map(
+          (msg) => ({
+            id: msg.id,
+            content: msg.content || '',
+            sender: {
+              type: msg.fromCustomer ? 'visitor' : 'agent',
+              name: msg.senderId,
+            },
+            status: msg.status as MessageStatus,
+            timestamp: msg.createdAt.toISOString(),
+          })
+        );
+
         client.emit('conversationHistory', {
-          messages: conversation.messages || [],
+          messages: messagesForFrontend,
         });
+        this.logger.log(
+          `Loaded conversation history for visitor ${visitor.id} in project ${payload.projectId}`
+        );
+        // this.logger.debug(
+        //   `Conversation messages: ${JSON.stringify(messagesForFrontend)}`
+        // );
         client.data.conversationId = conversation.id;
       }
     } else {
@@ -147,22 +203,30 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   public sendReplyToVisitor(visitorSocketId: string, message: any) {
-    this.server.to(visitorSocketId).emit('agentReply', message);
+    this.server.to(visitorSocketId).emit('agentReplied', message);
   }
 
-  @OnEvent('message.created')
-  async handleMessageCreated(message: Message) {
-    const conversation = await this.conversationService.findById(
-      message.conversationId
-    );
+  private async handleNewMessage(messageString: string) {
+    try {
+      const message: Message = JSON.parse(messageString);
+      this.logger.log(
+        `Received new message from Redis channel: Message ID ${message.id}`
+      );
 
-    if (conversation && conversation.projectId) {
-      const projectId = conversation.projectId;
-      const roomName = `project:${projectId}`;
+      const conversation = await this.conversationService.findById(
+        message.conversationId
+      );
 
-      this.server.to(roomName).emit('newMessage', message);
+      if (conversation && conversation.projectId) {
+        const projectId = conversation.projectId;
+        const roomName = `project:${projectId}`;
 
-      this.logger.log(`Emitted 'newMessage' to room: ${roomName}`);
+        this.server.to(roomName).emit('newMessage', message);
+
+        this.logger.log(`Emitted 'newMessage' to room: ${roomName}`);
+      }
+    } catch (error) {
+      this.logger.error('Error processing message from Redis:', error);
     }
   }
 }

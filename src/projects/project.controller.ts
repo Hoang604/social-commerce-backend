@@ -17,7 +17,7 @@ import { User } from '../user/entities/user.entity';
 import { WidgetSettingsDto } from './dto/widget-settings.dto';
 
 @UseGuards(JwtAuthGuard)
-@Controller('/api/v1/projects')
+@Controller('projects')
 export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}
 

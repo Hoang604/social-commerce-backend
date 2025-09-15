@@ -24,7 +24,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import type { TwoFactorRequest } from '../../common/types/two-factor-request.interface';
 
-@Controller('api/v1/2fa')
+@Controller('2fa')
 export class TwoFactorAuthenticationController {
   constructor(
     private readonly twoFactorAuthService: TwoFactorAuthenticationService,

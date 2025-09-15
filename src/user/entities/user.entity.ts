@@ -19,7 +19,7 @@ export enum UserStatus {
 
 @Entity('users')
 export class User {
-  // --- Nhóm 1: Định danh & Xác thực ---
+  // --- Group 1: Identity & Authentication ---
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -29,7 +29,7 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   passwordHash: string | null;
 
-  // --- Nhóm 2: Thông tin Cá nhân & UX ---
+  // --- Group 2: Personal Information & UX ---
   @Column({ type: 'varchar', nullable: true })
   fullName: string;
 
@@ -42,7 +42,7 @@ export class User {
   @Column({ type: 'varchar', length: 2, default: 'vi' })
   language: string;
 
-  // --- Nhóm 3: Trạng thái, Vai trò & Quan hệ ---
+  // --- Group 3: Status, Roles & Relationships ---
   @Column({
     type: 'enum',
     enum: UserStatus,
@@ -59,7 +59,7 @@ export class User {
   @Column({ type: 'timestamptz', default: () => 'CURRENT_TIMESTAMP' })
   tokensValidFrom: Date;
 
-  // --- Nhóm 4: Tính năng mới (2FA & Social Login) ---
+  // --- Group 4: New Features (2FA & Social Login) ---
   @Column({ default: false })
   isTwoFactorAuthenticationEnabled: boolean;
 
@@ -75,7 +75,7 @@ export class User {
   @OneToMany(() => UserIdentity, (identity) => identity.user)
   identities: UserIdentity[];
 
-  // --- Nhóm 5: Dấu vết Thời gian ---
+  // --- Group 5: Timestamps ---
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

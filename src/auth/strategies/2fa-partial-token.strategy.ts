@@ -48,27 +48,27 @@ export class TwoFactorAuthenticationStrategy extends PassportStrategy(
 
     const partialToken = req.cookies['2fa_partial_token'];
 
-    // Kiểm tra các điều kiện cần thiết
+    // Check necessary conditions
     if (!payload.sub) {
       this.logger.error('No user ID in payload');
-      throw new UnauthorizedException('Xác thực thất bại');
+      throw new UnauthorizedException('Authentication failed');
     }
 
     if (!payload.is2FA) {
       this.logger.error('Not a 2FA token');
-      throw new UnauthorizedException('Xác thực thất bại');
+      throw new UnauthorizedException('Authentication failed');
     }
 
     if (payload.isTwoFactorAuthenticated === true) {
       this.logger.error('2FA already completed');
-      throw new UnauthorizedException('Xác thực thất bại');
+      throw new UnauthorizedException('Authentication failed');
     }
 
     this.logger.log(
       `2FA Strategy validation successful for user: ${payload.sub}`
     );
 
-    // Gắn cả payload và refresh token vào request.user
+    // Attach both payload and refresh token to request.user
     return { ...payload, partialToken };
   }
 }

@@ -1,4 +1,9 @@
-import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
+import {
+  Module,
+  MiddlewareConsumer,
+  NestModule,
+  RequestMethod,
+} from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -15,11 +20,14 @@ import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { HttpModule } from '@nestjs/axios';
 import { LoggerMiddleware } from './common/middleware/logger.middleware';
 import { EventEmitterModule } from '@nestjs/event-emitter';
-import { RawBodyMiddleware } from './common/middleware/raw-body.middleware';
 import { CommonModule } from './common/common.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-redis-store';
-import { REDIS_CLIENT, RedisModule } from './redis/redis.module';
+import {
+  REDIS_PUBLISHER_CLIENT,
+  REDIS_SUBSCRIBER_CLIENT,
+  RedisModule,
+} from './redis/redis.module';
 import { RedisClientType } from 'redis';
 
 @Module({
@@ -30,15 +38,14 @@ import { RedisClientType } from 'redis';
     }),
     CacheModule.registerAsync({
       isGlobal: true,
-      imports: [RedisModule], // Import RedisModule để có thể inject provider của nó
+      imports: [RedisModule],
       useFactory: async (redisClient: RedisClientType) => {
         return {
           store: redisStore,
-          // @ts-ignore
           client: redisClient,
         };
       },
-      inject: [REDIS_CLIENT], // Inject Redis client đã được tạo ở RedisModule
+      inject: [REDIS_PUBLISHER_CLIENT],
     }),
 
     EventEmitterModule.forRoot(),
@@ -75,8 +82,5 @@ import { RedisClientType } from 'redis';
   providers: [AppService],
 })
 export class AppModule implements NestModule {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RawBodyMiddleware).forRoutes('*');
-    consumer.apply(LoggerMiddleware).forRoutes('*');
-  }
+  configure() {}
 }

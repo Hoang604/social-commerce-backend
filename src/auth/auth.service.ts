@@ -242,12 +242,12 @@ export class AuthService {
   private async _generateTokens(userId: string, email: string) {
     const accessTokenPayload = { sub: userId, email };
     const [accessToken, refreshToken] = await Promise.all([
-      // Tạo Access Token
+      // Generate Access Token
       this.jwtService.signAsync(accessTokenPayload, {
         secret: this.configService.get<string>('JWT_SECRET'),
         expiresIn: this.configService.get<string>('JWT_EXPIRES_IN'),
       }),
-      // Tạo Refresh Token (cũng là JWT)
+      // Generate Refresh Token (also JWT)
       this.jwtService.signAsync(accessTokenPayload, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
         expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN'),
@@ -269,31 +269,31 @@ export class AuthService {
     name: string;
     avatarUrl: string;
   }): Promise<User> {
-    // Bọc toàn bộ logic trong một transaction để đảm bảo tính toàn vẹn dữ liệu
+    // Wrap all logic in a transaction to ensure data integrity
     return this.entityManager.transaction(async (entityManager) => {
       const existingIdentity = await entityManager.findOne(UserIdentity, {
         where: { provider: profile.provider, providerId: profile.providerId },
         relations: ['user'],
       });
 
-      // 1. User đã tồn tại với provider này
+      // 1. User already exists with this provider
       if (existingIdentity) {
         return existingIdentity.user;
       }
 
-      // 2. Liên kết với tài khoản đã có cùng email
+      // 2. Link with an existing account with the same email
       let user = await entityManager.findOne(User, {
         where: { email: profile.email },
       });
 
       if (user) {
-        // Cập nhật avatar nếu chưa có
+        // Update avatar if not already set
         if (!user.avatarUrl) {
           user.avatarUrl = profile.avatarUrl;
           await entityManager.save(user);
         }
       } else {
-        // 3. Tạo mới hoàn toàn user
+        // 3. Create a completely new user
         user = entityManager.create(User, {
           email: profile.email,
           fullName: profile.name,
@@ -302,11 +302,11 @@ export class AuthService {
         await entityManager.save(user);
       }
 
-      // Tạo định danh mới cho user
+      // Create new identity for the user
       const newIdentity = entityManager.create(UserIdentity, {
         provider: profile.provider,
         providerId: profile.providerId,
-        user: user, // Gán trực tiếp đối tượng User
+        user: user, // Directly assign the User object
       });
       await entityManager.save(newIdentity);
 
@@ -319,7 +319,7 @@ export class AuthService {
     const key = `one-time-code:${code}`;
     const fiveMinutesInMs = 5 * 60 * 1000;
 
-    // Lưu key-value vào Redis với thời gian hết hạn (TTL) là 5 phút
+    // Store key-value in Redis with an expiration time (TTL) of 5 minutes
     await this.cacheManager.set(key, userId, fiveMinutesInMs);
     console.log('Storing one-time code in Redis with key:', key);
 
@@ -328,7 +328,7 @@ export class AuthService {
     return code;
   }
 
-  // [B] Sửa hàm exchangeCodeForTokens
+  // [B] Modify exchangeCodeForTokens function
   async exchangeCodeForTokens(
     code: string,
     ip: string,
@@ -340,20 +340,20 @@ export class AuthService {
   }> {
     const key = `one-time-code:${code}`;
 
-    // 1. Lấy userId từ Redis bằng key
+    // 1. Get userId from Redis by key
     const userId = await this.cacheManager.get<string>(key);
 
-    // 2. Xác thực mã
+    // 2. Validate the code
     if (!userId) {
       throw new UnauthorizedException(
         `No user found with key ${key}, invalid or expired code.`
       );
     }
     console.log('One-time code valid for userId:', userId);
-    // 3. Vô hiệu hóa mã ngay lập tức bằng cách xóa nó khỏi Redis
+    // 3. Invalidate the code immediately by deleting it from Redis
     await this.cacheManager.del(key);
 
-    // 4. Lấy thông tin user và tạo tokens (logic này giữ nguyên)
+    // 4. Get user information and create tokens (this logic remains the same)
     const user = await this.userService.findOneById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found.');

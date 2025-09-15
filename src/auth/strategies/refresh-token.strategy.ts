@@ -50,7 +50,7 @@ export class RefreshTokenStrategy extends PassportStrategy(
       throw new UnauthorizedException('Token has been revoked.');
     }
     const refreshToken = req.cookies['refresh_token'];
-    // Gắn cả payload và refresh token vào request.user
+    // Attach both payload and refresh token to request.user
     return { ...payload, refreshToken };
   }
 }
