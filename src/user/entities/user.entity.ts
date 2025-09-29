@@ -8,8 +8,9 @@ import {
   OneToMany,
 } from 'typeorm';
 import { TwoFactorRecoveryCode } from '../../auth/entities/two-factor-recovery-code.entity';
-import { Project } from 'src/projects/entities/project.entity';
 import { UserIdentity } from 'src/auth/entities/user-identity.entity';
+import { Role } from 'src/rbac/roles.enum';
+import { ProjectMember } from 'src/projects/entities/project-member.entity';
 
 export enum UserStatus {
   ACTIVE = 'active',
@@ -50,8 +51,18 @@ export class User {
   })
   status: UserStatus;
 
+  @Column({
+    type: 'simple-array',
+    enum: Role,
+    default: Role.MANAGER,
+  })
+  roles: Role[];
+
   @Column({ type: 'timestamptz', nullable: true })
   lastLoginAt: Date;
+
+  @OneToMany(() => ProjectMember, (projectMember) => projectMember.user)
+  projectMemberships: ProjectMember[];
 
   @OneToMany(() => RefreshToken, (token) => token.user)
   hashedRefreshTokens: RefreshToken[];
@@ -68,9 +79,6 @@ export class User {
 
   @OneToMany(() => TwoFactorRecoveryCode, (code) => code.user)
   recoveryCodes: TwoFactorRecoveryCode[];
-
-  @OneToMany(() => Project, (project) => project.user)
-  projects: Project[];
 
   @OneToMany(() => UserIdentity, (identity) => identity.user)
   identities: UserIdentity[];

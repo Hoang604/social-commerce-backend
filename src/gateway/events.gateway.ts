@@ -20,6 +20,7 @@ import { type Redis } from 'ioredis';
 import { REDIS_SUBSCRIBER_CLIENT } from 'src/redis/redis.module';
 import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
 import { UseGuards } from '@nestjs/common';
+import { subscribe } from 'diagnostics_channel';
 
 const NEW_MESSAGE_CHANNEL = 'new_message_channel';
 
@@ -80,6 +81,7 @@ export class EventsGateway
     });
 
     this.redisSubscriber.on('message', (channel, message) => {
+      this.logger.log(`Received message on channel: ${channel}`);
       if (channel === NEW_MESSAGE_CHANNEL) {
         this.handleNewMessage(message);
       }
@@ -91,6 +93,9 @@ export class EventsGateway
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { projectId: number; visitorUid: string }
   ): Promise<void> {
+    this.logger.debug(
+      `Identify event from client ${client.id} for visitorUid: ${payload.visitorUid} in projectId: ${payload.projectId}`
+    );
     const visitor = await this.visitorService.findByUid(payload.visitorUid);
 
     await this.realtimeSessionService.setVisitorSession(
@@ -125,11 +130,8 @@ export class EventsGateway
           messages: messagesForFrontend,
         });
         this.logger.log(
-          `Loaded conversation history for visitor ${visitor.id} in project ${payload.projectId}`
+          `Loaded conversation history for visitor ${visitor.id} in project ${payload.projectId} successfully.`
         );
-        // this.logger.debug(
-        //   `Conversation messages: ${JSON.stringify(messagesForFrontend)}`
-        // );
         client.data.conversationId = conversation.id;
       }
     } else {
@@ -146,6 +148,14 @@ export class EventsGateway
     if (!client.data.visitorUid || !client.data.projectId) {
       return;
     }
+
+    await this.realtimeSessionService.setVisitorSession(
+      client.data.visitorUid,
+      client.id
+    );
+    this.logger.debug(
+      `Reset session for visitorUid: ${client.data.visitorUid} with socketId: ${client.id}`
+    );
 
     const eventPayload = {
       type: 'NEW_MESSAGE_FROM_VISITOR',
@@ -189,6 +199,28 @@ export class EventsGateway
       conversationId,
       currentUrl: payload.currentUrl,
     });
+  }
+
+  @SubscribeMessage('joinProjectRoom')
+  handleJoinProjectRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { projectId: number }
+  ): { status: string; roomName: string } {
+    const roomName = `project:${payload.projectId}`;
+    client.join(roomName);
+    this.logger.log(`Client with ${client.id} joined room: ${roomName}`);
+    return { status: 'ok', roomName };
+  }
+
+  @SubscribeMessage('leaveProjectRoom')
+  handleLeaveProjectRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { projectId: number }
+  ): { status: string; roomName: string } {
+    const roomName = `project:${payload.projectId}`;
+    client.leave(roomName);
+    this.logger.log(`Client with ${client.id} left room: ${roomName}`);
+    return { status: 'ok', roomName };
   }
 
   public sendAgentTypingToVisitor(

@@ -29,6 +29,7 @@ import {
   RedisModule,
 } from './redis/redis.module';
 import { RedisClientType } from 'redis';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -53,11 +54,11 @@ import { RedisClientType } from 'redis';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         type: 'postgres',
-        host: configService.get<string>('psql_host') || 'localhost',
-        port: configService.get<number>('psql_port') || 5432,
-        username: configService.get<string>('psql_user') || 'hoang',
-        password: configService.get<string>('psql_password') || '',
-        database: configService.get<string>('psql_database') || 'your_database',
+        host: configService.get<string>('PSQL_HOST') || 'localhost',
+        port: configService.get<number>('PSQL_PORT') || 5432,
+        username: configService.get<string>('PSQL_USER') || 'hoang',
+        password: configService.get<string>('PSQL_PASSWORD') || '',
+        database: configService.get<string>('PSQL_DATABASE') || 'your_database',
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         namingStrategy: new SnakeNamingStrategy(),
         synchronize: false,
@@ -77,6 +78,7 @@ import { RedisClientType } from 'redis';
     RbacModule,
     ProjectModule,
     CommonModule,
+    MailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,3 +1,4 @@
+import 'crypto';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
@@ -15,7 +16,11 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   app.enableCors({
-    origin: configService.get<string>('FRONTEND_URL'),
+    origin: [
+      configService.get<string>('FRONTEND_URL'),
+      'http://localhost:5173',
+      'https://app.dinhviethoang604.id.vn',
+    ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });

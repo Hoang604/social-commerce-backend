@@ -15,8 +15,12 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { GetCurrentUser } from '../common/decorators/get-current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { WidgetSettingsDto } from './dto/widget-settings.dto';
+import { RolesGuard } from '../rbac/roles.guard';
+import { Roles } from '../rbac/roles.decorator';
+import { Role } from '../rbac/roles.enum';
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.MANAGER)
 @Controller('projects')
 export class ProjectController {
   constructor(private readonly projectService: ProjectService) {}

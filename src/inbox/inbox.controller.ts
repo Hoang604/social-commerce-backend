@@ -21,9 +21,13 @@ import { ListMessagesDto } from './dto/list-messages.dto';
 import { GetCurrentUser } from '../common/decorators/get-current-user.decorator';
 import { User } from '../user/entities/user.entity';
 import { AgentTypingDto } from './dto/agent-typing.dto';
+import { RolesGuard } from 'src/rbac/roles.guard';
+import { Roles } from 'src/rbac/roles.decorator';
+import { Role } from 'src/rbac/roles.enum';
 
 @Controller('inbox')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.AGENT)
 export class InboxController {
   constructor(
     private readonly conversationService: ConversationService,

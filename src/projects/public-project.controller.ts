@@ -13,7 +13,7 @@ import { type Request } from 'express';
 export class PublicProjectController {
   constructor(private readonly projectService: ProjectService) {}
 
-  @Get(':id/widget-settings')
+  @Get(':id/settings')
   async getWidgetSettings(@Param('id') id: number, @Req() req: Request) {
     const origin = req.headers.origin;
     const settings = await this.projectService.getWidgetSettings(id, origin);

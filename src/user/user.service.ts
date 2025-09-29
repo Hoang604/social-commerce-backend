@@ -184,8 +184,6 @@ export class UserService {
           entityManager
         );
 
-        console.log('Old token found:', oldToken);
-
         if (oldToken) {
           finalIpAddress = ipAddress || oldToken.ipAddress;
           finalUserAgent = userAgent || oldToken.userAgent;
@@ -291,7 +289,7 @@ export class UserService {
         await this.refreshTokenRepository.delete(matchingToken.id);
         throw new UnauthorizedException('Refresh token has expired');
       }
-      // Token is valid and not expired
+      // Token is valid and not expired, return true
       return true;
     }
 

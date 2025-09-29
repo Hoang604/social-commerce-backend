@@ -31,8 +31,8 @@ export class MessageService {
   ) {}
 
   /**
-   * Tạo một tin nhắn mới, được gọi từ EventConsumerService.
-   * Phương thức này được thiết kế để chạy bên trong một transaction.
+   * Create a new message, called from EventConsumerService.
+   * This method is designed to run inside a transaction.
    */
   async createMessage(
     data: CreateMessagePayload,
@@ -43,8 +43,8 @@ export class MessageService {
   }
 
   /**
-   * Gửi tin nhắn trả lời từ nhân viên (agent).
-   * Phương thức này được InboxController gọi.
+   * Send a reply message from an agent.
+   * This method is called by InboxController.
    */
   async sendAgentReply(
     user: User,
@@ -97,6 +97,11 @@ export class MessageService {
       savedMessage.status = MessageStatus.DELIVERED;
     }
 
+    this.logger.debug(`message: ${JSON.stringify(savedMessage)}`);
+
+    this.logger.log(
+      `Agent reply message ${savedMessage.id} status updated to ${savedMessage.status}`
+    );
     // Update message status
     return this.entityManager.save(savedMessage);
   }

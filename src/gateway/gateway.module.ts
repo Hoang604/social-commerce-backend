@@ -2,7 +2,6 @@ import { Module, forwardRef } from '@nestjs/common';
 import { EventsGateway } from './events.gateway';
 import { AuthModule } from '../auth/auth.module';
 import { UserModule } from '../user/user.module';
-import { JwtService } from '@nestjs/jwt';
 import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
 import { Conversation } from 'src/inbox/entities/conversation.entity';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -20,7 +19,7 @@ import { RealtimeSessionModule } from 'src/realtime-session/realtime-session.mod
     EventProducerModule,
     RealtimeSessionModule,
   ],
-  providers: [EventsGateway, WsJwtAuthGuard, JwtService],
+  providers: [EventsGateway, WsJwtAuthGuard],
   exports: [EventsGateway],
 })
 export class GatewayModule {}

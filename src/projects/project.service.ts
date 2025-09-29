@@ -4,9 +4,11 @@ import { Project } from './entities/project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { WidgetSettingsDto } from './dto/widget-settings.dto';
+import { Logger } from '@nestjs/common';
 
 @Injectable()
 export class ProjectService {
+  private readonly logger = new Logger(ProjectService.name);
   constructor(private readonly entityManager: EntityManager) {}
 
   async create(
@@ -68,17 +70,23 @@ export class ProjectService {
     const project = await this.entityManager.findOneBy(Project, { id });
 
     if (!project) {
+      this.logger.warn(`Project with ID ${id} not found.`);
       return null;
     }
 
     if (project.whitelistedDomains && project.whitelistedDomains.length > 0) {
       if (origin) {
+        this.logger.log(`Validating origin: ${origin}`);
         const originUrl = new URL(origin);
         const originDomain = originUrl.hostname;
         if (!project.whitelistedDomains.includes(originDomain)) {
+          this.logger.warn(
+            `Origin ${originDomain} is not whitelisted for project ${id}.`
+          );
           return null;
         }
       } else {
+        this.logger.warn(`No origin provided for project ${id}.`);
         return null;
       }
     }

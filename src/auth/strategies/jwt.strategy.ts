@@ -2,7 +2,8 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { UserService } from '../../user/user.service'; // <-- Import UserService
+import { UserService } from '../../user/user.service';
+import { Role } from '../../rbac/roles.enum';
 
 interface JwtPayload {
   sub: string;
@@ -28,7 +29,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: JwtPayload): Promise<{ id: string; email: string }> {
+  async validate(
+    payload: JwtPayload
+  ): Promise<{ id: string; email: string; roles: Role[] }> {
     if (!payload || !payload.sub || !payload.iat) {
       throw new UnauthorizedException('Invalid token payload.');
     }
@@ -46,6 +49,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Token has been revoked.');
     }
 
-    return { id: user.id, email: user.email };
+    return { id: user.id, email: user.email, roles: user.roles };
   }
 }

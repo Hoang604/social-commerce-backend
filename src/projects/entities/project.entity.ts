@@ -7,9 +7,9 @@ import {
   JoinColumn,
   OneToMany,
 } from 'typeorm';
-import { User } from '../../user/entities/user.entity';
 import { Conversation } from '../../inbox/entities/conversation.entity';
 import { WidgetSettingsDto } from '../dto/widget-settings.dto';
+import { ProjectMember } from './project-member.entity';
 
 @Entity('projects')
 export class Project {
@@ -18,10 +18,6 @@ export class Project {
 
   @Column({ type: 'uuid' })
   userId: string;
-
-  @ManyToOne(() => User, (user) => user.projects, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'user_id' })
-  user: User;
 
   @OneToMany(() => Conversation, (conversation) => conversation.project)
   conversations: Conversation[];
@@ -42,6 +38,9 @@ export class Project {
     name: 'whitelisted_domains',
   })
   whitelistedDomains: string[];
+
+  @OneToMany(() => ProjectMember, (member) => member.project)
+  members: ProjectMember[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;

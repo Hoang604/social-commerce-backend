@@ -68,7 +68,6 @@ export class EventConsumerService implements OnApplicationBootstrap {
 
   private startPolling() {
     this.logger.log('Starting SQS polling...');
-    // eslint-disable-next-line no-constant-condition
     const poll = async () => {
       while (true) {
         try {
@@ -102,7 +101,12 @@ export class EventConsumerService implements OnApplicationBootstrap {
   public async handleMessage(message: Message) {
     this.logger.log(`Received SQS message: ${message.MessageId}`);
     try {
-      if (!message.Body) {
+      if (message.Body) {
+        this.logger.debug(`Message Body: ${message.Body}`);
+      } else {
+        this.logger.warn(
+          `Message ${message.MessageId} has no body. Skipping processing.`
+        );
         throw new Error('Message body is empty.');
       }
 
@@ -134,7 +138,6 @@ export class EventConsumerService implements OnApplicationBootstrap {
     this.logger.log(`Handling new message from visitor: ${payload.visitorUid}`);
     const { visitorUid, projectId, content } = payload;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let savedMessage: any = null;
 
     await this.entityManager.transaction(async (manager) => {
@@ -181,7 +184,7 @@ export class EventConsumerService implements OnApplicationBootstrap {
     });
     if (savedMessage) {
       this.logger.log(
-        `Publishing message.created event for message: ${savedMessage.id}`
+        `Publishing message event for message: ${savedMessage.id}`
       );
       this.redisPublisher.publish(
         NEW_MESSAGE_CHANNEL,
