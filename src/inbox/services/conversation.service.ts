@@ -14,6 +14,7 @@ import { ListConversationsDto } from '../dto/list-conversations.dto';
 import { User } from 'src/user/entities/user.entity';
 import { RealtimeSessionService } from 'src/realtime-session/realtime-session.service';
 import { EventsGateway } from 'src/gateway/events.gateway';
+import { ProjectService } from 'src/projects/project.service';
 
 @Injectable()
 export class ConversationService {
@@ -21,7 +22,8 @@ export class ConversationService {
     private readonly entityManager: EntityManager,
     private readonly realtimeSessionService: RealtimeSessionService,
     @Inject(forwardRef(() => EventsGateway))
-    private readonly eventsGateway: EventsGateway
+    private readonly eventsGateway: EventsGateway,
+    private readonly projectService: ProjectService
   ) {}
 
   async findById(id: number): Promise<Conversation> {
@@ -105,16 +107,18 @@ export class ConversationService {
   async listByProject(
     user: User,
     projectId: number,
-    query: ListConversationsDto
+    query: ListConversationsDto,
   ) {
     const { status, page = 1, limit = 10 } = query;
 
     const qb = this.entityManager
       .createQueryBuilder(Conversation, 'conversation')
       .leftJoin('conversation.project', 'project')
+      .innerJoin('project.members', 'member', 'member.userId = :userId', {
+        userId: user.id,
+      })
       .leftJoinAndSelect('conversation.visitor', 'visitor')
-      .where('project.userId = :userId', { userId: user.id })
-      .andWhere('project.id = :projectId', { projectId });
+      .where('project.id = :projectId', { projectId });
 
     if (status) {
       qb.andWhere('conversation.status = :status', { status });
@@ -156,11 +160,10 @@ export class ConversationService {
           );
         }
 
-        if (conversation.project.userId !== userId) {
-          throw new ForbiddenException(
-            'Access to this conversation is denied.'
-          );
-        }
+        await this.projectService.validateProjectMembership(
+          conversation.projectId,
+          userId
+        );
 
         conversation.status = status;
         return transactionalEntityManager.save(conversation);
@@ -194,11 +197,10 @@ export class ConversationService {
           );
         }
 
-        if (conversation.project.userId !== userId) {
-          throw new ForbiddenException(
-            'Access to this conversation is denied.'
-          );
-        }
+        await this.projectService.validateProjectMembership(
+          conversation.projectId,
+          userId
+        );
 
         conversation.unreadCount = 0;
         return transactionalEntityManager.save(conversation);
@@ -243,9 +245,16 @@ export class ConversationService {
       relations: ['visitor', 'project'],
     });
 
-    if (!conversation || conversation.project.userId !== user.id) {
-      throw new ForbiddenException('Access to this conversation is denied.');
+    if (!conversation) {
+      throw new NotFoundException(
+        `Conversation with ID ${conversationId} not found.`
+      );
     }
+
+    await this.projectService.validateProjectMembership(
+      conversation.projectId,
+      user.id
+    );
 
     const visitorUid = conversation.visitor.visitorUid;
 

@@ -4,10 +4,16 @@ import { EntityManager } from 'typeorm';
 import { Message, MessageStatus } from '../entities/message.entity';
 import { EventsGateway } from 'src/gateway/events.gateway';
 import { User } from 'src/user/entities/user.entity';
-import { Injectable, Logger, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ListMessagesDto } from '../dto/list-messages.dto';
 import { Conversation } from '../entities/conversation.entity';
 import { RealtimeSessionService } from 'src/realtime-session/realtime-session.service';
+import { ProjectService } from 'src/projects/project.service';
 
 // Redefine DTO for message creation, removing old Facebook fields
 interface CreateMessagePayload {
@@ -27,7 +33,8 @@ export class MessageService {
   constructor(
     private readonly entityManager: EntityManager,
     private readonly realtimeSessionService: RealtimeSessionService,
-    private readonly eventsGateway: EventsGateway
+    private readonly eventsGateway: EventsGateway,
+    private readonly projectService: ProjectService
   ) {}
 
   /**
@@ -62,11 +69,16 @@ export class MessageService {
           }
         );
 
-        if (!conversation || conversation.project.userId !== user.id) {
-          throw new ForbiddenException(
-            'Access to this conversation is denied.'
+        if (!conversation) {
+          throw new NotFoundException(
+            `Conversation with ID ${conversationId} not found.`
           );
         }
+
+        await this.projectService.validateProjectMembership(
+          conversation.projectId,
+          user.id
+        );
 
         const visitorUid = conversation.visitor.visitorUid;
 
@@ -119,9 +131,16 @@ export class MessageService {
       relations: ['project'],
     });
 
-    if (!conversation || conversation.project.userId !== user.id) {
-      throw new ForbiddenException('Access to this conversation is denied.');
+    if (!conversation) {
+      throw new NotFoundException(
+        `Conversation with ID ${conversationId} not found.`
+      );
     }
+
+    await this.projectService.validateProjectMembership(
+      conversation.projectId,
+      user.id
+    );
 
     const qb = this.entityManager
       .createQueryBuilder(Message, 'message')

@@ -16,5 +16,6 @@ import { InvitationService } from './invitation.service';
   ],
   providers: [ProjectService, InvitationService],
   controllers: [ProjectController, PublicProjectController],
+  exports: [ProjectService],
 })
 export class ProjectModule {}

@@ -84,8 +84,8 @@ services:
 
   db:
     image: 'postgres:13-alpine'
-    port:
-      - '5433:5433'
+    ports:
+      - '5433:5432'
     environment:
       POSTGRES_USER: ${PSQL_USER}
       POSTGRES_PASSWORD: ${PSQL_PASSWORD}

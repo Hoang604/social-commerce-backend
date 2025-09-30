@@ -10,6 +10,7 @@ import { GatewayModule } from '../gateway/gateway.module';
 import { VisitorService } from './services/visitor.service';
 import { Visitor } from './entities/visitor.entity';
 import { RealtimeSessionModule } from 'src/realtime-session/realtime-session.module';
+import { ProjectService } from 'src/projects/project.service';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { RealtimeSessionModule } from 'src/realtime-session/realtime-session.mod
     MessageService,
     EncryptionService,
     VisitorService,
+    ProjectService,
   ],
   controllers: [InboxController],
   exports: [ConversationService, MessageService, VisitorService],

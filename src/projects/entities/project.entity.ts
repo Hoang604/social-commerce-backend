@@ -16,9 +16,6 @@ export class Project {
   @PrimaryGeneratedColumn('increment')
   id: number;
 
-  @Column({ type: 'uuid' })
-  userId: string;
-
   @OneToMany(() => Conversation, (conversation) => conversation.project)
   conversations: Conversation[];
 

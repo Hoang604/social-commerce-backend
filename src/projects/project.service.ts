@@ -1,15 +1,38 @@
-import { Injectable, ForbiddenException } from '@nestjs/common';
+import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
 import { Project } from './entities/project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { WidgetSettingsDto } from './dto/widget-settings.dto';
-import { Logger } from '@nestjs/common';
+import { ProjectMember } from './entities/project-member.entity';
+import { Role } from '../rbac/roles.enum';
 
 @Injectable()
 export class ProjectService {
   private readonly logger = new Logger(ProjectService.name);
+
   constructor(private readonly entityManager: EntityManager) {}
+
+  /**
+   * Validates if a user is a member of a project.
+   * Throws a ForbiddenException if not.
+   * @returns The project entity if validation is successful.
+   */
+  async validateProjectMembership(
+    projectId: number,
+    userId: string
+  ): Promise<Project> {
+    const membership = await this.entityManager.findOne(ProjectMember, {
+      where: { projectId, userId },
+      relations: ['project'],
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('Access to this project is denied.');
+    }
+
+    return membership.project;
+  }
 
   async create(
     createProjectDto: CreateProjectDto,
@@ -17,17 +40,32 @@ export class ProjectService {
   ): Promise<Project> {
     return this.entityManager.transaction(
       async (transactionalEntityManager) => {
-        const project = transactionalEntityManager.create(Project, {
-          ...createProjectDto,
-          userId,
+        // Create the project instance without userId
+        const project = transactionalEntityManager.create(
+          Project,
+          createProjectDto
+        );
+        const savedProject = await transactionalEntityManager.save(project);
+
+        // Automatically make the creator a member with the MANAGER role
+        const membership = transactionalEntityManager.create(ProjectMember, {
+          projectId: savedProject.id,
+          userId: userId,
+          role: Role.MANAGER,
         });
-        return transactionalEntityManager.save(project);
+        await transactionalEntityManager.save(membership);
+
+        return savedProject;
       }
     );
   }
 
   async findAllForUser(userId: string): Promise<Project[]> {
-    return this.entityManager.find(Project, { where: { userId } });
+    const memberships = await this.entityManager.find(ProjectMember, {
+      where: { userId },
+      relations: ['project'],
+    });
+    return memberships.map((membership) => membership.project);
   }
 
   async findByProjectId(projectId: number): Promise<Project | null> {
@@ -35,11 +73,7 @@ export class ProjectService {
   }
 
   async findOne(id: number, userId: string): Promise<Project> {
-    const project = await this.entityManager.findOneBy(Project, { id });
-    if (!project || project.userId !== userId) {
-      throw new ForbiddenException('Access to this project is denied.');
-    }
-    return project;
+    return this.validateProjectMembership(id, userId);
   }
 
   async update(
@@ -47,22 +81,20 @@ export class ProjectService {
     updateProjectDto: UpdateProjectDto,
     userId: string
   ): Promise<Project> {
-    return this.entityManager.transaction(
-      async (transactionalEntityManager) => {
-        const project = await transactionalEntityManager.findOneBy(Project, {
-          id,
-        });
-        if (!project || project.userId !== userId) {
-          throw new ForbiddenException('Access to this project is denied.');
-        }
-        const updated = await transactionalEntityManager.save(Project, {
-          ...project,
-          ...updateProjectDto,
-        });
-        return updated;
-      }
-    );
+    // Step 1: Validate membership and get the managed entity.
+    // 'project' is the actual entity from the database.
+    const project = await this.validateProjectMembership(id, userId);
+
+    // Step 2: Copy the properties from the DTO to the fetched entity.
+    // Object.assign updates 'project' in place with new values from the DTO.
+    Object.assign(project, updateProjectDto);
+
+    // Step 3: Save the modified entity.
+    // TypeORM knows this is an existing entity because it has an 'id'
+    // and is managed, so it will perform an UPDATE query.
+    return this.entityManager.save(project);
   }
+
   public async getWidgetSettings(
     id: number,
     origin: string | undefined
@@ -109,7 +141,7 @@ export class ProjectService {
     userId: string,
     settingsDto: WidgetSettingsDto
   ): Promise<Project> {
-    const project = await this.findOne(id, userId);
+    const project = await this.validateProjectMembership(id, userId);
 
     project.widgetSettings = {
       ...project.widgetSettings,
