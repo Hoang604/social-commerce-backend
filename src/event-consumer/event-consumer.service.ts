@@ -130,13 +130,14 @@ export class EventConsumerService implements OnApplicationBootstrap {
   }
 
   private async handleNewMessageFromVisitor(payload: {
+    tempId: string;
     content: string;
     visitorUid: string;
     projectId: number;
     socketId: string;
   }) {
     this.logger.log(`Handling new message from visitor: ${payload.visitorUid}`);
-    const { visitorUid, projectId, content } = payload;
+    const { tempId, visitorUid, projectId, content } = payload;
 
     let savedMessage: any = null;
 
@@ -159,7 +160,9 @@ export class EventConsumerService implements OnApplicationBootstrap {
         `[Transaction] Found or created conversation: ${conversation.id}`
       );
 
-      savedMessage = await this.messageService.createMessage(
+      savedMessage = await this.messageService.createMessageAndVerifySent(
+        tempId,
+        visitorUid,
         {
           conversationId: conversation.id,
           content: content,
@@ -186,9 +189,14 @@ export class EventConsumerService implements OnApplicationBootstrap {
       this.logger.log(
         `Publishing message event for message: ${savedMessage.id}`
       );
+      const eventPayload = {
+        message: savedMessage,
+        tempId: tempId,
+        visitorUid: visitorUid,
+      };
       this.redisPublisher.publish(
         NEW_MESSAGE_CHANNEL,
-        JSON.stringify(savedMessage)
+        JSON.stringify(eventPayload)
       );
     } else {
       this.logger.error('Failed to save message from visitor.');

@@ -35,18 +35,28 @@ export class MessageService {
     private readonly realtimeSessionService: RealtimeSessionService,
     private readonly eventsGateway: EventsGateway,
     private readonly projectService: ProjectService
-  ) {}
+  ) {
+    this.logger.log(`EventGateWay server: ${this.eventsGateway.server}`);
+  }
 
   /**
    * Create a new message, called from EventConsumerService.
    * This method is designed to run inside a transaction.
    */
-  async createMessage(
+  async createMessageAndVerifySent(
+    tempId: string,
+    visitorUid: string,
     data: CreateMessagePayload,
     manager: EntityManager
   ): Promise<Message> {
     const message = manager.create(Message, data);
-    return manager.save(message);
+    const savedMessage = await manager.save(message);
+
+    this.logger.log(
+      `Message ${savedMessage.id} created for visitor ${visitorUid}. It will be sent via Redis pub/sub.`,
+    );
+
+    return savedMessage;
   }
 
   /**

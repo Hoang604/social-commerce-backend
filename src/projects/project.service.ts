@@ -106,21 +106,31 @@ export class ProjectService {
       return null;
     }
 
-    if (project.whitelistedDomains && project.whitelistedDomains.length > 0) {
-      if (origin) {
-        this.logger.log(`Validating origin: ${origin}`);
-        const originUrl = new URL(origin);
-        const originDomain = originUrl.hostname;
-        if (!project.whitelistedDomains.includes(originDomain)) {
-          this.logger.warn(
-            `Origin ${originDomain} is not whitelisted for project ${id}.`
-          );
-          return null;
-        }
-      } else {
-        this.logger.warn(`No origin provided for project ${id}.`);
-        return null;
-      }
+    // Start of new "fail-closed" logic
+    if (!origin) {
+      this.logger.warn(
+        `Request for project ${id} is missing an Origin header. Access denied.`
+      );
+      return null;
+    }
+
+    if (!project.whitelistedDomains || project.whitelistedDomains.length === 0) {
+      this.logger.warn(
+        `Project ${id} has no whitelisted domains configured. Access denied for origin ${origin}.`
+      );
+      return null;
+    }
+    // End of new "fail-closed" logic
+
+    this.logger.log(`Validating origin: ${origin} for project ${id}`);
+    const originUrl = new URL(origin);
+    const originDomain = originUrl.hostname;
+
+    if (!project.whitelistedDomains.includes(originDomain)) {
+      this.logger.warn(
+        `Origin ${originDomain} is not whitelisted for project ${id}.`
+      );
+      return null;
     }
 
     const settings = project.widgetSettings as {

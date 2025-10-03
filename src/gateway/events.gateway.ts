@@ -10,17 +10,18 @@ import {
   OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { SqsService } from '../event-producer/sqs.service';
-import { ConversationService } from '../inbox/services/conversation.service';
-import { VisitorService } from '../inbox/services/visitor.service';
-import { Logger, Inject, forwardRef } from '@nestjs/common';
+import { Logger, Inject } from '@nestjs/common';
 import { RealtimeSessionService } from '../realtime-session/realtime-session.service';
-import { type Message } from 'src/inbox/entities/message.entity';
 import { type Redis } from 'ioredis';
 import { REDIS_SUBSCRIBER_CLIENT } from 'src/redis/redis.module';
 import { WsJwtAuthGuard } from './guards/ws-jwt-auth.guard';
 import { UseGuards } from '@nestjs/common';
-import { subscribe } from 'diagnostics_channel';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+  VisitorIdentifiedEvent,
+  VisitorMessageReceivedEvent,
+} from '../inbox/events';
+import { Conversation } from 'src/inbox/entities/conversation.entity';
 
 const NEW_MESSAGE_CHANNEL = 'new_message_channel';
 
@@ -50,13 +51,9 @@ export class EventsGateway
   private readonly logger = new Logger(EventsGateway.name);
 
   constructor(
-    private readonly sqsService: SqsService,
-    @Inject(forwardRef(() => ConversationService))
-    private readonly conversationService: ConversationService,
-    @Inject(forwardRef(() => VisitorService))
-    private readonly visitorService: VisitorService,
     private readonly realtimeSessionService: RealtimeSessionService,
-    @Inject(REDIS_SUBSCRIBER_CLIENT) private readonly redisSubscriber: Redis
+    @Inject(REDIS_SUBSCRIBER_CLIENT) private readonly redisSubscriber: Redis,
+    private readonly eventEmitter: EventEmitter2
   ) {}
 
   handleConnection(client: Socket) {
@@ -70,7 +67,7 @@ export class EventsGateway
     }
   }
 
-  afterInit() {
+  afterInit(server: Server) {
     this.logger.log('Gateway Initialized. Subscribing to Redis channel...');
     this.redisSubscriber.subscribe(NEW_MESSAGE_CHANNEL, (err) => {
       if (err) {
@@ -83,9 +80,54 @@ export class EventsGateway
     this.redisSubscriber.on('message', (channel, message) => {
       this.logger.log(`Received message on channel: ${channel}`);
       if (channel === NEW_MESSAGE_CHANNEL) {
-        this.handleNewMessage(message);
+        this.eventEmitter.emit('redis.message.received', message);
       }
     });
+  }
+
+  public prepareSocketForVisitor(
+    socketId: string,
+    visitor: import('src/inbox/entities/visitor.entity').Visitor | null,
+    conversation: Conversation | null,
+    projectId: number,
+    visitorUid: string
+  ) {
+    const socket = this.server.sockets.sockets.get(socketId);
+    if (!socket) {
+      this.logger.warn(`Could not find socket with id: ${socketId}`);
+      return;
+    }
+
+    socket.data.projectId = projectId;
+    socket.data.visitorUid = visitorUid;
+
+    if (visitor) {
+      socket.data.visitorId = visitor.id;
+    }
+
+    if (conversation) {
+      const messagesForFrontend: MessageFrontend[] = conversation.messages.map(
+        (msg) => ({
+          id: msg.id,
+          content: msg.content || '',
+          sender: {
+            type: msg.fromCustomer ? 'visitor' : 'agent',
+            name: msg.senderId,
+          },
+          status: msg.status as MessageStatus,
+          timestamp: msg.createdAt.toISOString(),
+        })
+      );
+
+      socket.emit('conversationHistory', {
+        messages: messagesForFrontend,
+      });
+      if (visitor)
+        this.logger.log(
+          `Loaded conversation history for visitor ${visitor.id} in project ${projectId} successfully.`
+        );
+      socket.data.conversationId = conversation.id;
+    }
   }
 
   @SubscribeMessage('identify')
@@ -96,79 +138,30 @@ export class EventsGateway
     this.logger.debug(
       `Identify event from client ${client.id} for visitorUid: ${payload.visitorUid} in projectId: ${payload.projectId}`
     );
-    const visitor = await this.visitorService.findByUid(payload.visitorUid);
 
-    await this.realtimeSessionService.setVisitorSession(
-      payload.visitorUid,
-      client.id
-    );
-
-    if (visitor) {
-      client.data.visitorId = visitor.id;
-      client.data.projectId = payload.projectId;
-      client.data.visitorUid = payload.visitorUid;
-
-      const conversation = await this.conversationService.getHistoryByVisitorId(
-        visitor.id
-      );
-
-      if (conversation) {
-        let messagesForFrontend: MessageFrontend[] = conversation.messages.map(
-          (msg) => ({
-            id: msg.id,
-            content: msg.content || '',
-            sender: {
-              type: msg.fromCustomer ? 'visitor' : 'agent',
-              name: msg.senderId,
-            },
-            status: msg.status as MessageStatus,
-            timestamp: msg.createdAt.toISOString(),
-          })
-        );
-
-        client.emit('conversationHistory', {
-          messages: messagesForFrontend,
-        });
-        this.logger.log(
-          `Loaded conversation history for visitor ${visitor.id} in project ${payload.projectId} successfully.`
-        );
-        client.data.conversationId = conversation.id;
-      }
-    } else {
-      client.data.projectId = payload.projectId;
-      client.data.visitorUid = payload.visitorUid;
-    }
+    const event = new VisitorIdentifiedEvent();
+    event.projectId = payload.projectId;
+    event.visitorUid = payload.visitorUid;
+    event.socketId = client.id;
+    this.eventEmitter.emit('visitor.identified', event);
   }
 
   @SubscribeMessage('sendMessage')
   async handleSendMessage(
-    @MessageBody() data: { content: string },
+    @MessageBody() data: { content: string; tempId: string },
     @ConnectedSocket() client: Socket
   ): Promise<void> {
     if (!client.data.visitorUid || !client.data.projectId) {
       return;
     }
 
-    await this.realtimeSessionService.setVisitorSession(
-      client.data.visitorUid,
-      client.id
-    );
-    this.logger.debug(
-      `Reset session for visitorUid: ${client.data.visitorUid} with socketId: ${client.id}`
-    );
-
-    const eventPayload = {
-      type: 'NEW_MESSAGE_FROM_VISITOR',
-      payload: {
-        content: data.content,
-        visitorUid: client.data.visitorUid,
-        projectId: client.data.projectId,
-        socketId: client.id,
-      },
-      timestamp: new Date().toISOString(),
-    };
-
-    await this.sqsService.sendMessage(eventPayload);
+    const event = new VisitorMessageReceivedEvent();
+    event.tempId = data.tempId;
+    event.content = data.content;
+    event.visitorUid = client.data.visitorUid;
+    event.projectId = client.data.projectId;
+    event.socketId = client.id;
+    this.eventEmitter.emit('visitor.message.received', event);
   }
 
   @SubscribeMessage('visitorIsTyping')
@@ -238,27 +231,11 @@ export class EventsGateway
     this.server.to(visitorSocketId).emit('agentReplied', message);
   }
 
-  private async handleNewMessage(messageString: string) {
+  public visitorMessageSent(visitorSocketId: string, data: any) {
     try {
-      const message: Message = JSON.parse(messageString);
-      this.logger.log(
-        `Received new message from Redis channel: Message ID ${message.id}`
-      );
-
-      const conversation = await this.conversationService.findById(
-        message.conversationId
-      );
-
-      if (conversation && conversation.projectId) {
-        const projectId = conversation.projectId;
-        const roomName = `project:${projectId}`;
-
-        this.server.to(roomName).emit('newMessage', message);
-
-        this.logger.log(`Emitted 'newMessage' to room: ${roomName}`);
-      }
+      this.server.to(visitorSocketId).emit('messageSent', data);
     } catch (error) {
-      this.logger.error('Error processing message from Redis:', error);
+      this.logger.log(error);
     }
   }
 }

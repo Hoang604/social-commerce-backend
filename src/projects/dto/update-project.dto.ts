@@ -1,9 +1,10 @@
 import {
   IsString,
   IsOptional,
-  IsUrl,
   IsObject,
   IsArray,
+  IsUrl,
+  ArrayMinSize,
 } from 'class-validator';
 
 export class UpdateProjectDto {
@@ -12,15 +13,12 @@ export class UpdateProjectDto {
   name?: string;
 
   @IsOptional()
-  @IsUrl()
-  siteUrl?: string;
-
-  @IsOptional()
   @IsObject()
   widgetSettings?: object;
 
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
+  @ArrayMinSize(1)
+  @IsUrl({}, { each: true })
   whitelistedDomains?: string[];
 }

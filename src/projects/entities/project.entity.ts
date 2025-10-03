@@ -22,9 +22,6 @@ export class Project {
   @Column()
   name: string;
 
-  @Column({ nullable: true })
-  siteUrl?: string;
-
   @Column({ type: 'jsonb', default: {} })
   widgetSettings: WidgetSettingsDto;
 

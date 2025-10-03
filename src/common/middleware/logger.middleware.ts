@@ -109,6 +109,29 @@ export class LoggerMiddleware implements NestMiddleware {
     return lines;
   }
 
+  private truncateArrays(obj: any): any {
+    if (Array.isArray(obj)) {
+      if (obj.length > 1) {
+        return [
+          this.truncateArrays(obj[0]),
+          `... and ${obj.length - 1} more items`,
+        ];
+      } else if (obj.length === 1) {
+        return [this.truncateArrays(obj[0])];
+      }
+      return [];
+    } else if (typeof obj === 'object' && obj !== null) {
+      const newObj = {};
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          newObj[key] = this.truncateArrays(obj[key]);
+        }
+      }
+      return newObj;
+    }
+    return obj;
+  }
+
   use(request: Request, response: Response, next: NextFunction) {
     const { method, originalUrl, headers, body, ip } = request;
     const userAgent = request.get('user-agent') || '';
@@ -157,6 +180,9 @@ export class LoggerMiddleware implements NestMiddleware {
       const dim = (text: string) => c(text, this.colors.dim);
       const bright = (text: string) => c(text, this.colors.bright);
 
+      const truncatedBody = this.truncateArrays(body);
+      const truncatedResponseBody = this.truncateArrays(responseBodyFormatted);
+
       const logMessage = [
         '',
         gray('┌' + '─'.repeat(65)),
@@ -177,14 +203,14 @@ export class LoggerMiddleware implements NestMiddleware {
         `${gray('│')} Headers:`,
         ...this.formatObjectForLog(headers, gray('│') + '   '),
         `${gray('│')} Body:`,
-        ...this.formatObjectForLog(body || {}, gray('│') + '   '),
+        ...this.formatObjectForLog(truncatedBody || {}, gray('│') + '   '),
         gray('├' + '─'.repeat(65)),
         `${gray('│')} ${bright('RESPONSE DETAILS:')}`,
         `${gray('│')} Headers:`,
         ...this.formatObjectForLog(response.getHeaders(), gray('│') + '   '),
         `${gray('│')} Body:`,
         ...this.formatObjectForLog(
-          responseBodyFormatted || {},
+          truncatedResponseBody || {},
           gray('│') + '   '
         ),
         gray('└' + '─'.repeat(65)),

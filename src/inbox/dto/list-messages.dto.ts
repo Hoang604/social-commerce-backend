@@ -6,8 +6,8 @@ export class ListMessagesDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(100)
-  limit?: number = 30;
+  @Max(1000)
+  limit?: number = 100;
 
   @IsOptional()
   @IsString()

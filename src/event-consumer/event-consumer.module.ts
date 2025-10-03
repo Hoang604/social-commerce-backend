@@ -8,6 +8,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { SQSClient } from '@aws-sdk/client-sqs';
+import { GatewayModule } from 'src/gateway/gateway.module';
 
 export const LIVE_CHAT_EVENTS_QUEUE = 'live-chat-events-queue';
 
@@ -18,6 +19,7 @@ export const LIVE_CHAT_EVENTS_QUEUE = 'live-chat-events-queue';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    GatewayModule,
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({

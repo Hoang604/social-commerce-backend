@@ -16,11 +16,7 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   app.enableCors({
-    origin: [
-      configService.get<string>('FRONTEND_URL'),
-      'http://localhost:5173',
-      'https://app.dinhviethoang604.id.vn',
-    ],
+    origin: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });

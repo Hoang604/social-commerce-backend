@@ -104,34 +104,45 @@ export class ConversationService {
    * @param query - DTO for pagination and filtering.
    * @returns A paginated list of conversations.
    */
-  async listByProject(
-    user: User,
-    projectId: number,
-    query: ListConversationsDto,
-  ) {
-    const { status, page = 1, limit = 10 } = query;
+  async listByProject(user: User, query: ListConversationsDto) {
+    const { projectId, status, page = 1, limit = 10 } = query;
 
     const qb = this.entityManager
+      // SQL: SELECT ... FROM conversation
       .createQueryBuilder(Conversation, 'conversation')
+
+      // SQL: LEFT JOIN project ...
       .leftJoin('conversation.project', 'project')
+
+      // SQL: INNER JOIN project_member ... ON ... AND member.userId = :userId
+      // This checks if the current user is a member of the project.
       .innerJoin('project.members', 'member', 'member.userId = :userId', {
         userId: user.id,
       })
+
+      // SQL: LEFT JOIN visitor ...
+      // Also adds all columns from 'visitor' to the SELECT clause.
       .leftJoinAndSelect('conversation.visitor', 'visitor')
+
+      // SQL: WHERE project.id = :projectId
       .where('project.id = :projectId', { projectId });
 
     if (status) {
+      // SQL: AND conversation.status = :status
       qb.andWhere('conversation.status = :status', { status });
     }
 
+    // SQL: ORDER BY conversation.lastMessageTimestamp DESC
     qb.orderBy('conversation.lastMessageTimestamp', 'DESC')
+      // SQL: OFFSET (page - 1) * limit
       .skip((page - 1) * limit)
+      // SQL: LIMIT limit
       .take(limit);
 
+    // This executes the query built above.
     const [data, total] = await qb.getManyAndCount();
     return { data, total, page, limit };
   }
-
   /**
    * Updates the status of a conversation (e.g., 'open', 'closed').
    * @param user - The authenticated user.
@@ -263,6 +274,7 @@ export class ConversationService {
       await this.realtimeSessionService.getVisitorSession(visitorUid);
 
     // Step 3: Send event IF visitor is online
+    console.log('agent is typing');
     if (visitorSocketId) {
       this.eventsGateway.sendAgentTypingToVisitor(
         visitorSocketId,

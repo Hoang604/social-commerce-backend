@@ -1,11 +1,18 @@
-import { IsString, IsNotEmpty, IsOptional, IsUrl } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsArray,
+  IsUrl,
+  ArrayMinSize,
+} from 'class-validator';
 
 export class CreateProjectDto {
   @IsString()
   @IsNotEmpty()
   name: string;
 
-  @IsOptional()
-  @IsUrl()
-  siteUrl?: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsUrl({}, { each: true })
+  whitelistedDomains: string[];
 }

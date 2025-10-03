@@ -37,10 +37,9 @@ export class InboxController {
   @Get('conversations')
   listConversations(
     @GetCurrentUser() user: User,
-    @Query('projectId', ParseIntPipe) projectId: number,
     @Query() query: ListConversationsDto
   ) {
-    return this.conversationService.listByProject(user, projectId, query);
+    return this.conversationService.listByProject(user, query);
   }
 
   @Post('conversations/:id/messages')

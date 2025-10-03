@@ -55,34 +55,46 @@ export class RedisIoAdapter extends IoAdapter {
 
     server.use(async (socket, next) => {
       const origin = socket.handshake.headers.origin;
-      if (!origin) {
-        return next();
-      }
 
+      // Allow main frontend app without further checks
       if (origin === frontendUrl) {
         logger.log(`Allowing origin (frontend): ${origin}`);
         return next();
       }
 
-      const projectId = socket.handshake.query.projectId;
+      // For all other origins (i.e., widgets), perform strict validation
+      if (!origin) {
+        return next(new Error('Origin header is missing.'));
+      }
 
+      const projectId = socket.handshake.query.projectId;
       if (!projectId || typeof projectId !== 'string') {
-        logger.warn(`Origin ${origin} without projectId blocked.`);
         return next(new Error('Project ID is missing or invalid.'));
       }
 
       const project = await projectService.findByProjectId(+projectId);
+      if (!project) {
+        return next(new Error(`Project with ID ${projectId} not found.`));
+      }
 
-      if (
-        project &&
-        project.whitelistedDomains &&
-        project.whitelistedDomains.includes(origin)
-      ) {
-        logger.log(`Allowing origin (widget): ${origin}`);
+      if (!project.whitelistedDomains || project.whitelistedDomains.length === 0) {
+        logger.warn(
+          `Project ${projectId} has no whitelisted domains configured. WS connection denied for origin ${origin}.`
+        );
+        return next(new Error('Not allowed by CORS'));
+      }
+
+      const originUrl = new URL(origin);
+      const originDomain = originUrl.hostname;
+
+      if (project.whitelistedDomains.includes(originDomain)) {
+        logger.log(`Allowing WS connection from origin (widget): ${origin}`);
         return next();
       }
 
-      logger.warn(`Origin ${origin} not in whitelist. Blocked.`);
+      logger.warn(
+        `Origin ${origin} not in whitelist for project ${projectId}. WS connection blocked.`
+      );
       return next(new Error('Not allowed by CORS'));
     });
 

@@ -10,20 +10,24 @@ import { GatewayModule } from '../gateway/gateway.module';
 import { VisitorService } from './services/visitor.service';
 import { Visitor } from './entities/visitor.entity';
 import { RealtimeSessionModule } from 'src/realtime-session/realtime-session.module';
-import { ProjectService } from 'src/projects/project.service';
+import { ProjectModule } from 'src/projects/project.module';
+import { InboxEventHandlerService } from './inbox-event.handler';
+import { EventProducerModule } from 'src/event-producer/event-producer.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Conversation, Message, Visitor]),
-    forwardRef(() => GatewayModule),
+    GatewayModule,
     RealtimeSessionModule,
+    ProjectModule,
+    EventProducerModule,
   ],
   providers: [
     ConversationService,
     MessageService,
     EncryptionService,
     VisitorService,
-    ProjectService,
+    InboxEventHandlerService,
   ],
   controllers: [InboxController],
   exports: [ConversationService, MessageService, VisitorService],
